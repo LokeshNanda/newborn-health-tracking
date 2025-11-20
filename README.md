@@ -13,17 +13,17 @@ Monitor newborn growth, medications, and vaccination schedules with a FastAPI ba
 
 ### Login Page
 <p align="center">
-  <img src="docs/images/login.png" alt="new" width="800" style="border-radius: 6px;"/><br>
+  <img src="docs/images/login.png" alt="new" width="800" style="border-radius: 6px; border: 5px solid black;"/><br>
 </p>
 
 ### Health Card
 <p align="center">
-  <img src="docs/images/uiscreen1.png" alt="new" width="800" style="border-radius: 6px;"/><br>
+  <img src="docs/images/uiscreen1.png" alt="new" width="800" style="border-radius: 6px; border: 5px solid black;"/><br>
 </p>
 
 ### Med & Vaccine Log
 <p align="center">
-  <img src="docs/images/uiscreen2.png" alt="new" width="800" style="border-radius: 6px;"/><br>
+  <img src="docs/images/uiscreen2.png" alt="new" width="800" style="border-radius: 6px; border: 5px solid black;"/><br>
 </p>
 
 
