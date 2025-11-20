@@ -1,12 +1,32 @@
 # Newborn Health Tracking Platform
+
+<div align="center">
+<p align="center">
+
+[![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff)](#)
+[![Next.js](https://img.shields.io/badge/Next.js-black?logo=next.js&logoColor=white)](#)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=fff)](#)
+</p>
+</div>
+
 Monitor newborn growth, medications, and vaccination schedules with a FastAPI backend and a Next.js (App Router) frontend using shadcn/ui, TanStack Query, and Google OAuth.
 
-> **Login Page**
-> ![Login page](docs/images/login.png)
-> **UI Screen 1**
-> ![UI Screen 1](docs/images/uiscreen1.png)
-> **UI Screen 2**
-> ![UI Screen 2](docs/images/uiscreen2.png)
+### Login Page
+<p align="center">
+  <img src="docs/images/login.png" alt="new" width="800" style="border-radius: 6px;"/><br>
+</p>
+
+### Health Card
+<p align="center">
+  <img src="docs/images/uiscreen1.png" alt="new" width="800" style="border-radius: 6px;"/><br>
+</p>
+
+### Med & Vaccine Log
+<p align="center">
+  <img src="docs/images/uiscreen2.png" alt="new" width="800" style="border-radius: 6px;"/><br>
+</p>
+
+
 
 
 ---
