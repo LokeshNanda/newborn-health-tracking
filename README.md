@@ -1,84 +1,105 @@
 # Newborn Health Tracking Platform
 
-Production-ready backend services for logging newborn growth, medication, and vaccination data, plus a forthcoming Next.js frontend (currently work in progress). The backend is built for real deployments—Google OAuth, JWT sessions, async MySQL access, Alembic migrations, Dockerized workflow, and pytest coverage scaffolding.
+<div align="center">
+<p align="center">
+
+[![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff)](#)
+[![Next.js](https://img.shields.io/badge/Next.js-black?logo=next.js&logoColor=white)](#)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=fff)](#)
+</p>
+</div>
+
+Monitor newborn growth, medications, and vaccination schedules with a FastAPI backend and a Next.js (App Router) frontend using shadcn/ui, TanStack Query, and Google OAuth.
+
+### Login Page
+<p align="center">
+  <img src="docs/images/login.png" alt="new" width="800" style="border-radius: 6px; border: 5px solid black;"/><br>
+</p>
+
+### Health Card
+<p align="center">
+  <img src="docs/images/uiscreen1.png" alt="new" width="800" style="border-radius: 6px; border: 5px solid black;"/><br>
+</p>
+
+### Med & Vaccine Log
+<p align="center">
+  <img src="docs/images/uiscreen2.png" alt="new" width="800" style="border-radius: 6px; border: 5px solid black;"/><br>
+</p>
+
+
+
 
 ---
 
 ## Repository Structure
-
-| Path | Status | Description |
-|------|--------|-------------|
-| `backend/` | ✅ Production-ready | FastAPI service, SQLAlchemy models, Alembic migrations, Docker stack, detailed README. |
-| `frontend/` | 🚧 In progress | Planned Next.js 14 app; code will be published in this repository once ready. |
-
-> **Need the backend docs?** See [`backend/README.md`](backend/README.md) for schema diagrams, API endpoints, environment variables, Docker instructions, and deployment checklists.
+| Path | Description |
+|------|-------------|
+| `backend/` | FastAPI service (async SQLAlchemy, Alembic, JWT auth, Docker-ready). See [`backend/README.md`](backend/README.md) for full setup. |
+| `frontend/` | Next.js 16 app using shadcn/ui, Tailwind, TanStack Query, Google OAuth, and recharts. See [`frontend/README.md`](frontend/README.md)|
 
 ---
 
-## Backend Highlights
+## Features
+### Backend
+- FastAPI 0.111 + async SQLAlchemy with MySQL (via `aiomysql`).
+- Auth flows: Google ID token login + email/password (bcrypt + JWT).
+- CRUD for children, growth logs, medications, and vaccine schedules defined in the published OpenAPI schema.
+- Alembic migrations, pytest scaffolding, Docker Compose workflow, uv-powered dependency management.
 
-- **FastAPI + Async SQLAlchemy** with aiomysql driver for MySQL 8.0+
-- **Authentication**: Google ID token verification + optional email/password login (bcrypt via Passlib) issuing HS256 JWT sessions
-- **Domain Models**: Users, children, growth logs, medication logs, vaccine schedules (UUID primary keys for distributed safety)
-- **Validation & Settings**: Pydantic v2 + `pydantic-settings`
-- **Migrations**: Alembic configured for async engines
-- **Testing**: pytest + httpx scaffolding (ready for integration tests)
-- **Dev Experience**: [`uv`](https://github.com/astral-sh/uv) for dependency management & virtualenvs
-- **Ops Ready**: Dockerfile + docker-compose, CORS for `http://localhost:3000`, global JSON error handler, structured README
+### Frontend
+- Next.js App Router, strict TypeScript, Tailwind/shadcn tokens with emerald theme.
+- Authentication routes inspired by [shadcn blocks](https://ui.shadcn.com/blocks) with Google OAuth integration.
+- Dashboard tabs for each child featuring growth charts (recharts), medication logs, vaccine schedules, and add-log dialogs.
+- TanStack Query for data fetching/caching, Axios interceptor for bearer tokens, zod + react-hook-form validation, toast feedback via sonner.
 
 ---
 
-## Quick Start (Backend)
-
+## Quick Start
+### Backend
 ```bash
 cd backend
-cp .env.example .env        # update secrets & NB_DATABASE_URL as needed
-uv sync                     # creates .venv and installs deps
-uv run alembic upgrade head # create database schema
+cp .env.example .env        # configure DB + OAuth secrets
+uv sync                     # install dependencies into .venv
+uv run alembic upgrade head # apply migrations
 uv run uvicorn app.main:app --reload
 ```
+Visit `http://localhost:8000/docs` for OpenAPI docs. See [`backend/README.md`](backend/README.md) for Docker instructions and environment details.
 
-Visit `http://localhost:8000/docs` for interactive API docs. The `.env.example` defaults assume you’re using the provided `docker-compose.yml` (MySQL exposed on `localhost:3307`).
-
----
-
-## Docker Workflow
-
+### Frontend
 ```bash
-cd backend
-cp .env.example .env
-docker compose up --build -d     # launches API + MySQL (with live code volume)
-docker compose run --rm api alembic upgrade head
-docker compose logs -f api       # tail logs
-docker compose down -v           # tear down stack
+cd frontend
+cp .env.local.example .env.local   # create this file if it doesn't exist
+# Required entries
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-google-oauth-client-id
+
+npm install
+npm run dev
 ```
-
-- The API container overrides `NB_DATABASE_URL` to point at the `db` service.
-- MySQL data persists via the `mysql_data` named volume; remove with `docker volume rm`.
-
----
-
-## Frontend Status
-
-- The Next.js client is being designed in parallel and will land under `frontend/` soon.
-- Until then, backend endpoints are documented and stable, so other clients (mobile, 3rd party integrations) can safely integrate using the published OpenAPI schema.
+Navigate to `http://localhost:3000`. You’ll be redirected to `/login` and can explore `/dashboard` after authenticating.
+See [`frontend/README.md`](frontend/README.md)
 
 ---
 
-## Contributing & Next Steps
+## Development Notes
+- **Auth tokens** are stored in `localStorage` under `nh-auth`. The Axios interceptor reads from there for every request.
+- **Dialogs** (growth, medication, vaccine) live under `frontend/components/dashboard` for reuse.
+- **shadcn components** are colocated in `frontend/components/ui/`. Run `npx shadcn@latest add <component>` to scaffold new primitives.
+- **TanStack Query keys** follow the pattern `["resource", childId]`; remember to invalidate when adding or mutating data.
 
-1. Fork/branch from the desired base (e.g., `feature/init`).
-2. Use `uv run pytest` before opening a PR; add tests for new routes.
-3. Keep secrets out of git—`.env`, `.venv`, and Docker artifacts are gitignored.
-4. Planned roadmap:
-   - Publish the Next.js frontend
-   - Add background reminders (vaccines/medications)
-   - Build health analytics dashboards
+---
 
-Feel free to open issues for feedback or feature requests while the frontend is under development.
+## Contributions & Roadmap
+1. Create a feature branch (e.g., `feature/medication-filters`).
+2. Run backend tests (`uv run pytest`) and frontend lint (`npm run lint`) before opening a PR.
+3. Planned enhancements:
+   - Push notifications or scheduled reminders for vaccines/meds.
+   - Editable growth/medication/vaccine entries.
+   - Analytics exports + PDF health summaries.
+
+Feedback and issues are welcome. Please include environment details and reproduction steps when reporting bugs.
 
 ---
 
 ## License
-
-See [LICENSE](LICENSE) for details.
+This project is licensed under the [MIT License](LICENSE).
