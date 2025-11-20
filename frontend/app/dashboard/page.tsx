@@ -9,13 +9,34 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAuth } from "@/components/providers/auth-provider";
-import { createChild, createGrowthLog, getChildren, getGrowthLogs } from "@/lib/api";
-import { formatDate, formatDateTime } from "@/lib/utils";
+import {
+  createChild,
+  createGrowthLog,
+  createMedicationLog,
+  createVaccineRecord,
+  getChildren,
+  getGrowthLogs,
+  getMedicationLogs,
+  getVaccineRecords,
+} from "@/lib/api";
+import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { AddChildDialog, type ChildFormValues } from "@/components/dashboard/add-child-dialog";
 import { AddGrowthLogDialog, type GrowthFormValues } from "@/components/dashboard/add-growth-log-dialog";
+import { AddMedicationLogDialog, type MedicationFormValues } from "@/components/dashboard/add-medication-log-dialog";
+import { AddVaccineRecordDialog, type VaccineFormValues } from "@/components/dashboard/add-vaccine-record-dialog";
 import { GrowthChart } from "@/components/GrowthChart";
-import { Baby, Clock, LogOut, Plus, Ruler, Scale } from "lucide-react";
+import { Baby, Clock, Pill, Plus, Ruler, Scale, Shield } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import type { UserRead } from "@/lib/types";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -24,6 +45,8 @@ export default function DashboardPage() {
   const [activeChildId, setActiveChildId] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isGrowthDialogOpen, setIsGrowthDialogOpen] = useState(false);
+  const [isMedicationDialogOpen, setIsMedicationDialogOpen] = useState(false);
+  const [isVaccineDialogOpen, setIsVaccineDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !token) {
@@ -42,6 +65,18 @@ export default function DashboardPage() {
   const growthQuery = useQuery({
     queryKey: ["growth", selectedChildId],
     queryFn: () => getGrowthLogs(selectedChildId ?? undefined),
+    enabled: Boolean(token && selectedChildId),
+  });
+
+  const medicationQuery = useQuery({
+    queryKey: ["medications", selectedChildId],
+    queryFn: () => getMedicationLogs(selectedChildId ?? undefined),
+    enabled: Boolean(token && selectedChildId),
+  });
+
+  const vaccineQuery = useQuery({
+    queryKey: ["vaccines", selectedChildId],
+    queryFn: () => getVaccineRecords(selectedChildId ?? undefined),
     enabled: Boolean(token && selectedChildId),
   });
 
@@ -64,6 +99,26 @@ export default function DashboardPage() {
       await queryClient.invalidateQueries({ queryKey: ["growth", selectedChildId] });
     },
     onError: (error: Error) => toast.error(error.message ?? "Unable to save growth log"),
+  });
+
+  const createMedicationMutation = useMutation({
+    mutationFn: createMedicationLog,
+    onSuccess: async () => {
+      toast.success("Medication log added");
+      setIsMedicationDialogOpen(false);
+      await queryClient.invalidateQueries({ queryKey: ["medications", selectedChildId] });
+    },
+    onError: (error: Error) => toast.error(error.message ?? "Unable to save medication log"),
+  });
+
+  const createVaccineMutation = useMutation({
+    mutationFn: createVaccineRecord,
+    onSuccess: async () => {
+      toast.success("Vaccine record saved");
+      setIsVaccineDialogOpen(false);
+      await queryClient.invalidateQueries({ queryKey: ["vaccines", selectedChildId] });
+    },
+    onError: (error: Error) => toast.error(error.message ?? "Unable to save vaccine record"),
   });
 
   const handleCreateChild = async (values: ChildFormValues) => {
@@ -99,6 +154,37 @@ export default function DashboardPage() {
     }
   };
 
+  const handleCreateMedication = async (values: MedicationFormValues) => {
+    if (!selectedChildId) {
+      toast.error("Select a child first");
+      return;
+    }
+    try {
+      await createMedicationMutation.mutateAsync({
+        ...values,
+        dosage: values.dosage?.trim() || null,
+        child_id: selectedChildId,
+      });
+    } catch {
+      // handled by mutation
+    }
+  };
+
+  const handleCreateVaccine = async (values: VaccineFormValues) => {
+    if (!selectedChildId) {
+      toast.error("Select a child first");
+      return;
+    }
+    try {
+      await createVaccineMutation.mutateAsync({
+        ...values,
+        child_id: selectedChildId,
+      });
+    } catch {
+      // handled by mutation
+    }
+  };
+
   const handleLogout = () => {
     logout();
     router.replace("/login");
@@ -107,9 +193,18 @@ export default function DashboardPage() {
   const activeChild = children.find((child) => child.id === selectedChildId) ?? null;
 
   const growthLogs = growthQuery.data ?? [];
+  const medicationLogs = medicationQuery.data ?? [];
+  const vaccineRecords = vaccineQuery.data ?? [];
+
   const orderedGrowthLogs = growthLogs
     .slice()
     .sort((a, b) => new Date(b.record_date).getTime() - new Date(a.record_date).getTime());
+  const orderedMedicationLogs = medicationLogs
+    .slice()
+    .sort((a, b) => new Date(b.administered_at).getTime() - new Date(a.administered_at).getTime());
+  const orderedVaccineRecords = vaccineRecords
+    .slice()
+    .sort((a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime());
 
   const shouldForceDialog = !isChildrenLoading && children.length === 0;
   const dialogOpen = shouldForceDialog || isDialogOpen;
@@ -149,7 +244,7 @@ export default function DashboardPage() {
             <p className="text-muted-foreground">
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Button className="gap-2" onClick={() => setIsDialogOpen(true)} variant="default">
               <Plus className="h-4 w-4" />
               Add Child
@@ -163,15 +258,12 @@ export default function DashboardPage() {
               <Ruler className="h-4 w-4" />
               Log Growth
             </Button>
-            <Button className="gap-2" variant="outline" onClick={handleLogout}>
-              <LogOut className="h-4 w-4" />
-              Sign out
-            </Button>
+            <UserMenu user={user} onLogout={handleLogout} />
           </div>
         </div>
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
+        <div className="mt-6 grid w-full max-w-4xl gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {heroStats.map((stat) => (
-            <div key={stat.label} className="rounded-xl border bg-white/70 p-4 shadow-sm backdrop-blur">
+            <div key={stat.label} className="max-w-xs rounded-xl border bg-white/80 p-4 shadow-sm backdrop-blur">
               <div className="flex items-center gap-3">
                 <div className="rounded-full bg-primary/10 p-2 text-primary">
                   <stat.icon className="h-4 w-4" />
@@ -308,6 +400,117 @@ export default function DashboardPage() {
                       )}
                     </div>
                   </div>
+                  <div className="mt-6 grid gap-6 lg:grid-cols-2">
+                    <Card className="rounded-2xl border bg-white shadow-sm">
+                      <CardHeader className="flex flex-row items-center justify-between">
+                        <div>
+                          <CardTitle className="text-base font-semibold">Medication log</CardTitle>
+                          <CardDescription>Track administered medicines and dosages.</CardDescription>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="gap-2"
+                          onClick={() => {
+                            setActiveChildId(child.id);
+                            setIsMedicationDialogOpen(true);
+                          }}
+                        >
+                          <Pill className="h-4 w-4" />
+                          Log dose
+                        </Button>
+                      </CardHeader>
+                      <CardContent>
+                        {child.id === selectedChildId && orderedMedicationLogs.length > 0 ? (
+                          <div className="overflow-hidden rounded-xl border">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Medicine</TableHead>
+                                  <TableHead>Dosage</TableHead>
+                                  <TableHead>Administered</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {orderedMedicationLogs.slice(0, 5).map((log) => (
+                                  <TableRow key={log.id}>
+                                    <TableCell className="font-medium">{log.medicine_name}</TableCell>
+                                    <TableCell>{log.dosage ?? "—"}</TableCell>
+                                    <TableCell>{formatDateTime(log.administered_at)}</TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed bg-muted/40 p-6 text-center text-sm text-muted-foreground">
+                            <Pill className="mb-2 h-6 w-6 text-muted-foreground" />
+                            No medication logs yet.
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                    <Card className="rounded-2xl border bg-white shadow-sm">
+                      <CardHeader className="flex flex-row items-center justify-between">
+                        <div>
+                          <CardTitle className="text-base font-semibold">Vaccine schedule</CardTitle>
+                          <CardDescription>Monitor upcoming and completed vaccines.</CardDescription>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="gap-2"
+                          onClick={() => {
+                            setActiveChildId(child.id);
+                            setIsVaccineDialogOpen(true);
+                          }}
+                        >
+                          <Shield className="h-4 w-4" />
+                          Add vaccine
+                        </Button>
+                      </CardHeader>
+                      <CardContent>
+                        {child.id === selectedChildId && orderedVaccineRecords.length > 0 ? (
+                          <div className="overflow-hidden rounded-xl border">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Vaccine</TableHead>
+                                  <TableHead>Date</TableHead>
+                                  <TableHead>Status</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {orderedVaccineRecords.slice(0, 5).map((record) => (
+                                  <TableRow key={record.id}>
+                                    <TableCell className="font-medium">{record.vaccine_name}</TableCell>
+                                    <TableCell>{formatDate(record.scheduled_date)}</TableCell>
+                                    <TableCell>
+                                      <span
+                                        className={cn(
+                                          "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                                          record.status === "COMPLETED"
+                                            ? "bg-emerald-100 text-emerald-700"
+                                            : "bg-amber-100 text-amber-700",
+                                        )}
+                                      >
+                                        {record.status === "COMPLETED" ? "Completed" : "Pending"}
+                                      </span>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed bg-muted/40 p-6 text-center text-sm text-muted-foreground">
+                            <Shield className="mb-2 h-6 w-6 text-muted-foreground" />
+                            No vaccine records yet.
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
                 </TabsContent>
               ))}
             </Tabs>
@@ -328,6 +531,55 @@ export default function DashboardPage() {
         isSubmitting={createGrowthMutation.isPending}
         childName={activeChild?.name}
       />
+      <AddMedicationLogDialog
+        open={isMedicationDialogOpen}
+        onOpenChange={setIsMedicationDialogOpen}
+        onSubmit={handleCreateMedication}
+        isSubmitting={createMedicationMutation.isPending}
+      />
+      <AddVaccineRecordDialog
+        open={isVaccineDialogOpen}
+        onOpenChange={setIsVaccineDialogOpen}
+        onSubmit={handleCreateVaccine}
+        isSubmitting={createVaccineMutation.isPending}
+      />
     </div>
+  );
+}
+
+function UserMenu({ user, onLogout }: { user: UserRead | null; onLogout: () => void }) {
+  const displayName = user?.full_name?.trim().length ? user.full_name : user?.email ?? "Guest caregiver";
+  const email = user?.email ?? "No email available";
+  const initials = (user?.full_name || user?.email || "N/A")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase())
+    .slice(0, 2)
+    .join("") || "NC";
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-3 rounded-full border border-border/80 bg-white px-2 py-1 shadow-sm transition hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+        >
+          <Avatar className="h-11 w-11">
+            <AvatarImage src="https://github.com/shadc1Chn.png" alt={`${displayName} avatar`} />
+            <AvatarFallback className="bg-primary/10 text-sm font-semibold text-primary">{initials}</AvatarFallback>
+          </Avatar>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-60">
+        <DropdownMenuLabel>
+          <p className="text-sm font-semibold text-foreground">{displayName}</p>
+          <p className="text-xs text-muted-foreground">{email}</p>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onLogout} className="cursor-pointer text-destructive focus:text-destructive">
+          Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

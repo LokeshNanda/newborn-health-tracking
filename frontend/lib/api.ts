@@ -7,9 +7,13 @@ import type {
   GoogleLoginRequest,
   GrowthLogCreate,
   GrowthLogRead,
+  MedicationLogCreate,
+  MedicationLogRead,
   UserLogin,
   UserRead,
   UserRegister,
+  VaccineRecordCreate,
+  VaccineRecordRead,
 } from "./types";
 
 export interface StoredAuth {
@@ -77,5 +81,29 @@ export const getGrowthLogs = async (childId?: string) => {
 
 export const createGrowthLog = async (payload: GrowthLogCreate) => {
   const { data } = await apiClient.post<GrowthLogRead>("/api/v1/health/growth", payload);
+  return data;
+};
+
+export const getMedicationLogs = async (childId?: string) => {
+  const { data } = await apiClient.get<MedicationLogRead[]>("/api/v1/health/medications", {
+    params: childId ? { child_id: childId } : undefined,
+  });
+  return data;
+};
+
+export const createMedicationLog = async (payload: MedicationLogCreate) => {
+  const { data } = await apiClient.post<MedicationLogRead>("/api/v1/health/medications", payload);
+  return data;
+};
+
+export const getVaccineRecords = async (childId?: string) => {
+  const { data } = await apiClient.get<VaccineRecordRead[]>("/api/v1/health/vaccines", {
+    params: childId ? { child_id: childId } : undefined,
+  });
+  return data;
+};
+
+export const createVaccineRecord = async (payload: VaccineRecordCreate) => {
+  const { data } = await apiClient.post<VaccineRecordRead>("/api/v1/health/vaccines", payload);
   return data;
 };

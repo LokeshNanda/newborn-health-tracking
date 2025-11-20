@@ -13,7 +13,7 @@ export function GrowthChart({ data, loading }: GrowthChartProps) {
   if (loading) {
     return (
       <div className="flex h-72 items-center justify-center rounded-lg border bg-muted/30">
-        <p className="text-sm text-muted-foreground">Loading growth data…</p>
+        <p className="text-sm text-muted-foreground">Loading growth data...</p>
       </div>
     );
   }
@@ -59,10 +59,10 @@ export function GrowthChart({ data, loading }: GrowthChartProps) {
           <Line
             type="monotone"
             dataKey="weight_kg"
-            stroke="#3b82f6"
+            stroke="hsl(var(--primary))"
             strokeWidth={3}
-            dot={{ r: 6, strokeWidth: 2, stroke: "#1d4ed8", fill: "#bfdbfe" }}
-            activeDot={{ r: 8 }}
+            dot={{ r: 6, strokeWidth: 2, stroke: "hsl(var(--primary))", fill: "hsl(var(--accent))" }}
+            activeDot={{ r: 8, fill: "hsl(var(--primary))" }}
             yAxisId="weight"
           />
         </LineChart>
