@@ -32,3 +32,9 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/.next/
+frontend/.turbo/
+frontend/.vercel/
