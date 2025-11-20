@@ -1,12 +1,13 @@
 # Newborn Health Tracking Platform
 Monitor newborn growth, medications, and vaccination schedules with a FastAPI backend and a Next.js (App Router) frontend using shadcn/ui, TanStack Query, and Google OAuth.
 
-> **Screenshots**  
-> ```md
+> **Login Page**
 > ![Login page](docs/images/login.png)
+> **UI Screen 1**
 > ![UI Screen 1](docs/images/uiscreen1.png)
+> **UI Screen 2**
 > ![UI Screen 2](docs/images/uiscreen2.png)
-> ```
+
 
 ---
 
