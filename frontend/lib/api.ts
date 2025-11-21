@@ -133,3 +133,11 @@ export const updateVaccineRecord = async (id: string, payload: VaccineRecordUpda
   const { data } = await apiClient.put<VaccineRecordRead>(`/api/v1/health/vaccines/${id}`, payload);
   return data;
 };
+
+export const downloadVaccineRecordsPdf = async (childId: string) => {
+  const { data } = await apiClient.get<Blob>("/api/v1/health/vaccines/export/pdf", {
+    params: { child_id: childId },
+    responseType: "blob",
+  });
+  return data;
+};

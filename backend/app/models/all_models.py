@@ -3,7 +3,7 @@ from __future__ import annotations
 import enum
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Enum, Float, ForeignKey, String
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -97,5 +97,7 @@ class VaccineRecord(UUIDMixin, Base):
     status: Mapped[VaccineStatus] = mapped_column(
         Enum(VaccineStatus, native_enum=False, length=16), nullable=False, default=VaccineStatus.PENDING
     )
+    administered_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_recommended: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     child: Mapped[Child] = relationship(back_populates="vaccine_records")

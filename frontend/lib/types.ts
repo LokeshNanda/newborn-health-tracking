@@ -102,18 +102,22 @@ export interface VaccineRecordCreate {
   scheduled_date: string;
   status: VaccineStatus;
   child_id: string;
+  administered_date?: string | null;
 }
 
 export interface VaccineRecordRead {
   vaccine_name: string;
   scheduled_date: string;
   status: VaccineStatus;
+  administered_date?: string | null;
   id: string;
   child_id: string;
+  is_recommended: boolean;
 }
 
 export interface VaccineRecordUpdate {
   vaccine_name?: string;
   scheduled_date?: string;
   status?: VaccineStatus;
+  administered_date?: string | null;
 }

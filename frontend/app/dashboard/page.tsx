@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -15,6 +16,7 @@ import {
   createMedicationLog,
   createVaccineRecord,
   downloadMedicationLogsPdf,
+  downloadVaccineRecordsPdf,
   getChildren,
   getGrowthLogs,
   getMedicationLogs,
@@ -61,6 +63,10 @@ const makeSafeFileName = (value?: string | null) => {
   if (!value) return "medication";
   const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   return slug || "medication";
+};
+
+const normalizeDateInput = (value?: string | null) => {
+  return value && value.trim().length > 0 ? value : null;
 };
 
 export default function DashboardPage() {
@@ -201,6 +207,10 @@ export default function DashboardPage() {
     mutationFn: (childId: string) => downloadMedicationLogsPdf(childId),
   });
 
+  const downloadVaccinePdfMutation = useMutation({
+    mutationFn: (childId: string) => downloadVaccineRecordsPdf(childId),
+  });
+
   const handleCreateChild = async (values: ChildFormValues) => {
     if (!user?.id) {
       toast.error("Missing parent id");
@@ -282,12 +292,18 @@ export default function DashboardPage() {
   };
 
   const handleSaveVaccine = async (values: VaccineFormValues) => {
+    const normalizedAdminDate = normalizeDateInput(values.administered_date);
+    const payloadWithAdminDate = {
+      ...values,
+      administered_date: normalizedAdminDate,
+    };
+
     if (editingVaccineRecord) {
       try {
         await updateVaccineMutation.mutateAsync({
           id: editingVaccineRecord.id,
           childId: editingVaccineRecord.child_id,
-          payload: values,
+          payload: payloadWithAdminDate,
         });
       } catch {
         // handled by mutation
@@ -301,7 +317,7 @@ export default function DashboardPage() {
     }
     try {
       await createVaccineMutation.mutateAsync({
-        ...values,
+        ...payloadWithAdminDate,
         child_id: selectedChildId,
       });
     } catch {
@@ -329,6 +345,29 @@ export default function DashboardPage() {
       toast.success("Medication log PDF downloaded");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to download medication logs";
+      toast.error(message);
+    }
+  };
+
+  const handleDownloadVaccinePdf = async () => {
+    if (!selectedChildId) {
+      toast.error("Select a child first");
+      return;
+    }
+    try {
+      const blob = await downloadVaccinePdfMutation.mutateAsync(selectedChildId);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const fileName = `${makeSafeFileName(activeChild?.name)}_vaccine_schedule.pdf`;
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success("Vaccine schedule PDF downloaded");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to download vaccine schedule";
       toast.error(message);
     }
   };
@@ -431,6 +470,7 @@ export default function DashboardPage() {
       vaccine_name: editingVaccineRecord.vaccine_name,
       scheduled_date: editingVaccineRecord.scheduled_date,
       status: editingVaccineRecord.status,
+      administered_date: editingVaccineRecord.administered_date ?? "",
     };
   }, [editingVaccineRecord]);
 
@@ -546,11 +586,23 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <div>
-                        <h3 className="text-base font-semibold">Growth trend</h3>
-                        <GrowthChart
-                          data={child.id === selectedChildId ? growthLogs : []}
-                          loading={growthQuery.isLoading && child.id === selectedChildId}
-                        />
+                        <h3 className="text-base font-semibold">Growth trends</h3>
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          <GrowthChart
+                            data={child.id === selectedChildId ? growthLogs : []}
+                            loading={growthQuery.isLoading && child.id === selectedChildId}
+                            metric="weight"
+                            childDob={child.dob}
+                            title="Weight trajectory"
+                          />
+                          <GrowthChart
+                            data={child.id === selectedChildId ? growthLogs : []}
+                            loading={growthQuery.isLoading && child.id === selectedChildId}
+                            metric="height"
+                            childDob={child.dob}
+                            title="Height trajectory"
+                          />
+                        </div>
                       </div>
                     </div>
                     <div className="rounded-2xl border bg-white p-6 shadow-sm">
@@ -696,18 +748,30 @@ export default function DashboardPage() {
                           <CardTitle className="text-base font-semibold">Vaccine schedule</CardTitle>
                           <CardDescription>Monitor upcoming and completed vaccines.</CardDescription>
                         </div>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="gap-2"
-                          onClick={() => {
-                            setActiveChildId(child.id);
-                            handleVaccineDialogOpenChange(true);
-                          }}
-                        >
-                          <Shield className="h-4 w-4" />
-                          Add vaccine
-                        </Button>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="gap-2"
+                            onClick={() => {
+                              setActiveChildId(child.id);
+                              handleVaccineDialogOpenChange(true);
+                            }}
+                          >
+                            <Shield className="h-4 w-4" />
+                            Add vaccine
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-2"
+                            onClick={handleDownloadVaccinePdf}
+                            disabled={!selectedChildId || downloadVaccinePdfMutation.isPending}
+                          >
+                            <Download className="h-4 w-4" />
+                            {downloadVaccinePdfMutation.isPending ? "Preparing..." : "Download PDF"}
+                          </Button>
+                        </div>
                       </CardHeader>
                       <CardContent>
                         {child.id === selectedChildId && orderedVaccineRecords.length > 0 ? (
@@ -716,16 +780,32 @@ export default function DashboardPage() {
                               <TableHeader>
                                 <TableRow>
                                   <TableHead>Vaccine</TableHead>
-                                  <TableHead>Date</TableHead>
+                                  <TableHead>Scheduled</TableHead>
+                                  <TableHead>Administered</TableHead>
                                   <TableHead>Status</TableHead>
                                   <TableHead className="text-right">Actions</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                {orderedVaccineRecords.slice(0, 5).map((record) => (
+                                {orderedVaccineRecords.map((record) => (
                                   <TableRow key={record.id}>
-                                    <TableCell className="font-medium">{record.vaccine_name}</TableCell>
+                                    <TableCell>
+                                      <div className="flex flex-col gap-1">
+                                        <span className="font-medium">{record.vaccine_name}</span>
+                                        {record.is_recommended ? (
+                                          <Badge
+                                            variant="outline"
+                                            className="w-fit border-blue-200 text-xs font-semibold text-blue-700"
+                                          >
+                                            WHO recommended
+                                          </Badge>
+                                        ) : null}
+                                      </div>
+                                    </TableCell>
                                     <TableCell>{formatDate(record.scheduled_date)}</TableCell>
+                                    <TableCell>
+                                      {record.administered_date ? formatDate(record.administered_date) : "—"}
+                                    </TableCell>
                                     <TableCell>
                                       <span
                                         className={cn(

@@ -57,6 +57,7 @@ class VaccineRecordBase(BaseModel):
     vaccine_name: str
     scheduled_date: date
     status: VaccineStatus
+    administered_date: date | None = None
 
 
 class VaccineRecordCreate(VaccineRecordBase):
@@ -67,6 +68,7 @@ class VaccineRecordUpdate(BaseModel):
     vaccine_name: str | None = None
     scheduled_date: date | None = None
     status: VaccineStatus | None = None
+    administered_date: date | None = None
 
 
 class VaccineRecordRead(VaccineRecordBase):
@@ -74,3 +76,4 @@ class VaccineRecordRead(VaccineRecordBase):
 
     id: str
     child_id: str
+    is_recommended: bool
