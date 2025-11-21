@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -10,11 +10,20 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { VaccineStatus } from "@/lib/types";
 
-const vaccineSchema = z.object({
-  vaccine_name: z.string().min(2, { message: "Vaccine name is required" }),
-  scheduled_date: z.string().min(1, { message: "Date is required" }),
-  status: z.enum(["PENDING", "COMPLETED"]),
-});
+const vaccineSchema = z
+  .object({
+    vaccine_name: z.string().min(2, { message: "Vaccine name is required" }),
+    scheduled_date: z.string().min(1, { message: "Date is required" }),
+    status: z.enum(["PENDING", "COMPLETED"]),
+    administered_date: z.string().optional(),
+  })
+  .refine(
+    (values) => values.status === "PENDING" || Boolean(values.administered_date?.trim()),
+    {
+      message: "Administered date is required when marking as completed",
+      path: ["administered_date"],
+    },
+  );
 
 export type VaccineFormValues = z.infer<typeof vaccineSchema>;
 
@@ -23,34 +32,51 @@ interface AddVaccineRecordDialogProps {
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: VaccineFormValues) => Promise<void> | void;
   isSubmitting: boolean;
+  mode?: "create" | "edit";
+  initialValues?: VaccineFormValues | null;
 }
 
-export function AddVaccineRecordDialog({ open, onOpenChange, onSubmit, isSubmitting }: AddVaccineRecordDialogProps) {
+const getDefaultVaccineValues = (): VaccineFormValues => ({
+  vaccine_name: "",
+  scheduled_date: new Date().toISOString().slice(0, 10),
+  status: "PENDING",
+  administered_date: "",
+});
+
+export function AddVaccineRecordDialog({
+  open,
+  onOpenChange,
+  onSubmit,
+  isSubmitting,
+  mode = "create",
+  initialValues,
+}: AddVaccineRecordDialogProps) {
+  const isEdit = mode === "edit";
   const form = useForm<VaccineFormValues>({
     resolver: zodResolver(vaccineSchema),
-    defaultValues: {
-      vaccine_name: "",
-      scheduled_date: new Date().toISOString().slice(0, 10),
-      status: "PENDING",
-    },
+    defaultValues: getDefaultVaccineValues(),
+  });
+  const statusValue = useWatch({
+    control: form.control,
+    name: "status",
   });
 
   useEffect(() => {
-    if (!open) {
-      form.reset({
-        vaccine_name: "",
-        scheduled_date: new Date().toISOString().slice(0, 10),
-        status: "PENDING",
-      });
+    if (open) {
+      form.reset(initialValues ?? getDefaultVaccineValues());
+    } else {
+      form.reset(getDefaultVaccineValues());
     }
-  }, [form, open]);
+  }, [form, initialValues, open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Schedule vaccine</DialogTitle>
-          <DialogDescription>Track upcoming or completed vaccine milestones.</DialogDescription>
+          <DialogTitle>{isEdit ? "Edit vaccine record" : "Schedule vaccine"}</DialogTitle>
+          <DialogDescription>
+            {isEdit ? "Adjust the vaccine details." : "Track upcoming or completed vaccine milestones."}
+          </DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form
@@ -107,9 +133,22 @@ export function AddVaccineRecordDialog({ open, onOpenChange, onSubmit, isSubmitt
                 </FormItem>
               )}
             />
+            <FormField
+              control={form.control}
+              name="administered_date"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Administered date</FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} disabled={statusValue !== "COMPLETED"} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <DialogFooter>
               <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitting}>
-                {isSubmitting ? "Saving..." : "Save record"}
+                {isSubmitting ? "Saving..." : isEdit ? "Update record" : "Save record"}
               </Button>
             </DialogFooter>
           </form>

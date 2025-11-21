@@ -17,6 +17,12 @@ class GrowthLogCreate(GrowthLogBase):
     child_id: str
 
 
+class GrowthLogUpdate(BaseModel):
+    record_date: date | None = None
+    weight_kg: float | None = None
+    height_cm: float | None = None
+
+
 class GrowthLogRead(GrowthLogBase):
     model_config = ConfigDict(from_attributes=True)
 
@@ -34,6 +40,12 @@ class MedicationLogCreate(MedicationLogBase):
     child_id: str
 
 
+class MedicationLogUpdate(BaseModel):
+    medicine_name: str | None = None
+    dosage: str | None = None
+    administered_at: datetime | None = None
+
+
 class MedicationLogRead(MedicationLogBase):
     model_config = ConfigDict(from_attributes=True)
 
@@ -45,10 +57,18 @@ class VaccineRecordBase(BaseModel):
     vaccine_name: str
     scheduled_date: date
     status: VaccineStatus
+    administered_date: date | None = None
 
 
 class VaccineRecordCreate(VaccineRecordBase):
     child_id: str
+
+
+class VaccineRecordUpdate(BaseModel):
+    vaccine_name: str | None = None
+    scheduled_date: date | None = None
+    status: VaccineStatus | None = None
+    administered_date: date | None = None
 
 
 class VaccineRecordRead(VaccineRecordBase):
@@ -56,3 +76,4 @@ class VaccineRecordRead(VaccineRecordBase):
 
     id: str
     child_id: str
+    is_recommended: bool

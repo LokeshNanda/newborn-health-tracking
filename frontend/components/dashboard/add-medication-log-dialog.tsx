@@ -22,34 +22,46 @@ interface AddMedicationLogDialogProps {
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: MedicationFormValues) => Promise<void> | void;
   isSubmitting: boolean;
+  mode?: "create" | "edit";
+  initialValues?: MedicationFormValues | null;
 }
 
-export function AddMedicationLogDialog({ open, onOpenChange, onSubmit, isSubmitting }: AddMedicationLogDialogProps) {
+const getDefaultMedicationValues = (): MedicationFormValues => ({
+  medicine_name: "",
+  dosage: "",
+  administered_at: new Date().toISOString().slice(0, 16),
+});
+
+export function AddMedicationLogDialog({
+  open,
+  onOpenChange,
+  onSubmit,
+  isSubmitting,
+  mode = "create",
+  initialValues,
+}: AddMedicationLogDialogProps) {
+  const isEdit = mode === "edit";
   const form = useForm<MedicationFormValues>({
     resolver: zodResolver(medicationSchema),
-    defaultValues: {
-      medicine_name: "",
-      dosage: "",
-      administered_at: new Date().toISOString().slice(0, 16),
-    },
+    defaultValues: getDefaultMedicationValues(),
   });
 
   useEffect(() => {
-    if (!open) {
-      form.reset({
-        medicine_name: "",
-        dosage: "",
-        administered_at: new Date().toISOString().slice(0, 16),
-      });
+    if (open) {
+      form.reset(initialValues ?? getDefaultMedicationValues());
+    } else {
+      form.reset(getDefaultMedicationValues());
     }
-  }, [form, open]);
+  }, [form, initialValues, open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Log medication</DialogTitle>
-          <DialogDescription>Capture dosage and administration time.</DialogDescription>
+          <DialogTitle>{isEdit ? "Edit medication log" : "Log medication"}</DialogTitle>
+          <DialogDescription>
+            {isEdit ? "Update the dosage details." : "Capture dosage and administration time."}
+          </DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form
@@ -99,7 +111,7 @@ export function AddMedicationLogDialog({ open, onOpenChange, onSubmit, isSubmitt
             />
             <DialogFooter>
               <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitting}>
-                {isSubmitting ? "Saving..." : "Save log"}
+                {isSubmitting ? "Saving..." : isEdit ? "Update log" : "Save log"}
               </Button>
             </DialogFooter>
           </form>

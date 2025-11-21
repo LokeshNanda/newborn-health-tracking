@@ -29,34 +29,49 @@ interface AddGrowthLogDialogProps {
   onSubmit: (values: GrowthFormValues) => Promise<void> | void;
   isSubmitting: boolean;
   childName?: string;
+  mode?: "create" | "edit";
+  initialValues?: GrowthFormValues | null;
 }
 
-export function AddGrowthLogDialog({ open, onOpenChange, onSubmit, isSubmitting, childName }: AddGrowthLogDialogProps) {
+const getDefaultGrowthValues = (): GrowthFormValues => ({
+  record_date: new Date().toISOString().slice(0, 10),
+  weight_kg: 3,
+  height_cm: 50,
+});
+
+export function AddGrowthLogDialog({
+  open,
+  onOpenChange,
+  onSubmit,
+  isSubmitting,
+  childName,
+  mode = "create",
+  initialValues,
+}: AddGrowthLogDialogProps) {
+  const isEdit = mode === "edit";
   const form = useForm<GrowthFormValues>({
     resolver: zodResolver(growthSchema),
-    defaultValues: {
-      record_date: new Date().toISOString().slice(0, 10),
-      weight_kg: 3,
-      height_cm: 50,
-    },
+    defaultValues: getDefaultGrowthValues(),
   });
 
   useEffect(() => {
-    if (!open) {
-      form.reset({
-        record_date: new Date().toISOString().slice(0, 10),
-        weight_kg: 3,
-        height_cm: 50,
-      });
+    if (open) {
+      form.reset(initialValues ?? getDefaultGrowthValues());
+    } else {
+      form.reset(getDefaultGrowthValues());
     }
-  }, [form, open]);
+  }, [form, initialValues, open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Log growth</DialogTitle>
-          <DialogDescription>Track {childName ? `${childName}'s` : "the child's"} latest measurements.</DialogDescription>
+          <DialogTitle>{isEdit ? "Edit growth log" : "Log growth"}</DialogTitle>
+          <DialogDescription>
+            {isEdit
+              ? "Update the recorded measurements."
+              : `Track ${childName ? `${childName}'s` : "the child's"} latest measurements.`}
+          </DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form
@@ -120,7 +135,7 @@ export function AddGrowthLogDialog({ open, onOpenChange, onSubmit, isSubmitting,
             </div>
             <DialogFooter>
               <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitting}>
-                {isSubmitting ? "Saving…" : "Save log"}
+                {isSubmitting ? "Saving..." : isEdit ? "Update log" : "Save log"}
               </Button>
             </DialogFooter>
           </form>

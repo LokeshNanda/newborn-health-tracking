@@ -3,7 +3,7 @@ from __future__ import annotations
 import enum
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Enum, Float, ForeignKey, String
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -20,6 +20,12 @@ class VaccineStatus(str, enum.Enum):
     COMPLETED = "COMPLETED"
 
 
+class ChildRole(str, enum.Enum):
+    PRIMARY_GUARDIAN = "PRIMARY_GUARDIAN"
+    CAREGIVER = "CAREGIVER"
+    PEDIATRICIAN = "PEDIATRICIAN"
+
+
 class User(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "users"
 
@@ -30,6 +36,10 @@ class User(UUIDMixin, TimestampMixin, Base):
 
     children: Mapped[list["Child"]] = relationship(
         back_populates="parent",
+        cascade="all, delete-orphan",
+    )
+    child_memberships: Mapped[list["ChildMember"]] = relationship(
+        back_populates="user",
         cascade="all, delete-orphan",
     )
 
@@ -55,6 +65,10 @@ class Child(UUIDMixin, TimestampMixin, Base):
         cascade="all, delete-orphan",
     )
     vaccine_records: Mapped[list["VaccineRecord"]] = relationship(
+        back_populates="child",
+        cascade="all, delete-orphan",
+    )
+    members: Mapped[list["ChildMember"]] = relationship(
         back_populates="child",
         cascade="all, delete-orphan",
     )
@@ -97,5 +111,25 @@ class VaccineRecord(UUIDMixin, Base):
     status: Mapped[VaccineStatus] = mapped_column(
         Enum(VaccineStatus, native_enum=False, length=16), nullable=False, default=VaccineStatus.PENDING
     )
+    administered_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_recommended: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     child: Mapped[Child] = relationship(back_populates="vaccine_records")
+
+
+class ChildMember(UUIDMixin, TimestampMixin, Base):
+    __tablename__ = "child_members"
+    __table_args__ = (UniqueConstraint("child_id", "user_id", name="uq_child_members_child_id"),)
+
+    child_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("children.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    role: Mapped[ChildRole] = mapped_column(
+        Enum(ChildRole, native_enum=False, length=32), nullable=False, default=ChildRole.CAREGIVER
+    )
+
+    child: Mapped[Child] = relationship(back_populates="members")
+    user: Mapped[User] = relationship(back_populates="child_memberships")

@@ -3,17 +3,23 @@ import { API_BASE_URL, AUTH_STORAGE_KEY } from "./constants";
 import type {
   AuthResponse,
   ChildCreate,
+  ChildMemberInvite,
+  ChildMemberRead,
+  ChildMemberUpdate,
   ChildRead,
   GoogleLoginRequest,
   GrowthLogCreate,
   GrowthLogRead,
+  GrowthLogUpdate,
   MedicationLogCreate,
   MedicationLogRead,
+  MedicationLogUpdate,
   UserLogin,
   UserRead,
   UserRegister,
   VaccineRecordCreate,
   VaccineRecordRead,
+  VaccineRecordUpdate,
 } from "./types";
 
 export interface StoredAuth {
@@ -84,6 +90,11 @@ export const createGrowthLog = async (payload: GrowthLogCreate) => {
   return data;
 };
 
+export const updateGrowthLog = async (id: string, payload: GrowthLogUpdate) => {
+  const { data } = await apiClient.put<GrowthLogRead>(`/api/v1/health/growth/${id}`, payload);
+  return data;
+};
+
 export const getMedicationLogs = async (childId?: string) => {
   const { data } = await apiClient.get<MedicationLogRead[]>("/api/v1/health/medications", {
     params: childId ? { child_id: childId } : undefined,
@@ -93,6 +104,19 @@ export const getMedicationLogs = async (childId?: string) => {
 
 export const createMedicationLog = async (payload: MedicationLogCreate) => {
   const { data } = await apiClient.post<MedicationLogRead>("/api/v1/health/medications", payload);
+  return data;
+};
+
+export const updateMedicationLog = async (id: string, payload: MedicationLogUpdate) => {
+  const { data } = await apiClient.put<MedicationLogRead>(`/api/v1/health/medications/${id}`, payload);
+  return data;
+};
+
+export const downloadMedicationLogsPdf = async (childId: string) => {
+  const { data } = await apiClient.get<Blob>("/api/v1/health/medications/export/pdf", {
+    params: { child_id: childId },
+    responseType: "blob",
+  });
   return data;
 };
 
@@ -106,4 +130,43 @@ export const getVaccineRecords = async (childId?: string) => {
 export const createVaccineRecord = async (payload: VaccineRecordCreate) => {
   const { data } = await apiClient.post<VaccineRecordRead>("/api/v1/health/vaccines", payload);
   return data;
+};
+
+export const updateVaccineRecord = async (id: string, payload: VaccineRecordUpdate) => {
+  const { data } = await apiClient.put<VaccineRecordRead>(`/api/v1/health/vaccines/${id}`, payload);
+  return data;
+};
+
+export const downloadVaccineRecordsPdf = async (childId: string) => {
+  const { data } = await apiClient.get<Blob>("/api/v1/health/vaccines/export/pdf", {
+    params: { child_id: childId },
+    responseType: "blob",
+  });
+  return data;
+};
+
+export const getChildMembers = async (childId: string) => {
+  const { data } = await apiClient.get<ChildMemberRead[]>(`/api/v1/children/${childId}/members`);
+  return data;
+};
+
+export const inviteChildMember = async (childId: string, payload: ChildMemberInvite) => {
+  const { data } = await apiClient.post<ChildMemberRead>(`/api/v1/children/${childId}/members`, payload);
+  return data;
+};
+
+export const updateChildMemberRole = async (
+  childId: string,
+  memberId: string,
+  payload: ChildMemberUpdate,
+) => {
+  const { data } = await apiClient.patch<ChildMemberRead>(
+    `/api/v1/children/${childId}/members/${memberId}`,
+    payload,
+  );
+  return data;
+};
+
+export const removeChildMember = async (childId: string, memberId: string) => {
+  await apiClient.delete(`/api/v1/children/${childId}/members/${memberId}`);
 };

@@ -1,6 +1,7 @@
 export type Gender = "MALE" | "FEMALE" | "OTHER";
 
 export type VaccineStatus = "PENDING" | "COMPLETED";
+export type ChildRole = "PRIMARY_GUARDIAN" | "CAREGIVER" | "PEDIATRICIAN";
 
 export interface UserRead {
   email: string;
@@ -70,6 +71,12 @@ export interface GrowthLogRead {
   child_id: string;
 }
 
+export interface GrowthLogUpdate {
+  record_date?: string;
+  weight_kg?: number;
+  height_cm?: number;
+}
+
 export interface MedicationLogCreate {
   medicine_name: string;
   dosage?: string | null;
@@ -85,17 +92,48 @@ export interface MedicationLogRead {
   child_id: string;
 }
 
+export interface MedicationLogUpdate {
+  medicine_name?: string;
+  dosage?: string | null;
+  administered_at?: string;
+}
+
 export interface VaccineRecordCreate {
   vaccine_name: string;
   scheduled_date: string;
   status: VaccineStatus;
   child_id: string;
+  administered_date?: string | null;
 }
 
 export interface VaccineRecordRead {
   vaccine_name: string;
   scheduled_date: string;
   status: VaccineStatus;
+  administered_date?: string | null;
   id: string;
   child_id: string;
+  is_recommended: boolean;
+}
+
+export interface VaccineRecordUpdate {
+  vaccine_name?: string;
+  scheduled_date?: string;
+  status?: VaccineStatus;
+  administered_date?: string | null;
+}
+
+export interface ChildMemberRead {
+  id: string;
+  role: ChildRole;
+  user: UserRead;
+}
+
+export interface ChildMemberInvite {
+  email: string;
+  role: ChildRole;
+}
+
+export interface ChildMemberUpdate {
+  role: ChildRole;
 }
