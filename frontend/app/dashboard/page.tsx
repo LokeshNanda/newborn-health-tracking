@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -14,10 +14,14 @@ import {
   createGrowthLog,
   createMedicationLog,
   createVaccineRecord,
+  downloadMedicationLogsPdf,
   getChildren,
   getGrowthLogs,
   getMedicationLogs,
   getVaccineRecords,
+  updateGrowthLog,
+  updateMedicationLog,
+  updateVaccineRecord,
 } from "@/lib/api";
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { AddChildDialog, type ChildFormValues } from "@/components/dashboard/add-child-dialog";
@@ -25,7 +29,7 @@ import { AddGrowthLogDialog, type GrowthFormValues } from "@/components/dashboar
 import { AddMedicationLogDialog, type MedicationFormValues } from "@/components/dashboard/add-medication-log-dialog";
 import { AddVaccineRecordDialog, type VaccineFormValues } from "@/components/dashboard/add-vaccine-record-dialog";
 import { GrowthChart } from "@/components/GrowthChart";
-import { Baby, Clock, Pill, Plus, Ruler, Scale, Shield } from "lucide-react";
+import { Baby, Clock, Download, Pill, Plus, Ruler, Scale, Shield } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -36,7 +40,28 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { UserRead } from "@/lib/types";
+import type {
+  GrowthLogRead,
+  MedicationLogRead,
+  MedicationLogUpdate,
+  UserRead,
+  VaccineRecordRead,
+  VaccineRecordUpdate,
+} from "@/lib/types";
+
+const toDateTimeInputValue = (value: string) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value.slice(0, 16);
+  }
+  return parsed.toISOString().slice(0, 16);
+};
+
+const makeSafeFileName = (value?: string | null) => {
+  if (!value) return "medication";
+  const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return slug || "medication";
+};
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -47,6 +72,9 @@ export default function DashboardPage() {
   const [isGrowthDialogOpen, setIsGrowthDialogOpen] = useState(false);
   const [isMedicationDialogOpen, setIsMedicationDialogOpen] = useState(false);
   const [isVaccineDialogOpen, setIsVaccineDialogOpen] = useState(false);
+  const [editingGrowthLog, setEditingGrowthLog] = useState<GrowthLogRead | null>(null);
+  const [editingMedicationLog, setEditingMedicationLog] = useState<MedicationLogRead | null>(null);
+  const [editingVaccineRecord, setEditingVaccineRecord] = useState<VaccineRecordRead | null>(null);
 
   useEffect(() => {
     if (!loading && !token) {
@@ -101,6 +129,24 @@ export default function DashboardPage() {
     onError: (error: Error) => toast.error(error.message ?? "Unable to save growth log"),
   });
 
+  const updateGrowthMutation = useMutation({
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: string;
+      payload: GrowthFormValues;
+      childId: string;
+    }) => updateGrowthLog(id, payload),
+    onSuccess: async (_, variables) => {
+      toast.success("Growth log updated");
+      setIsGrowthDialogOpen(false);
+      setEditingGrowthLog(null);
+      await queryClient.invalidateQueries({ queryKey: ["growth", variables.childId] });
+    },
+    onError: (error: Error) => toast.error(error.message ?? "Unable to update growth log"),
+  });
+
   const createMedicationMutation = useMutation({
     mutationFn: createMedicationLog,
     onSuccess: async () => {
@@ -111,6 +157,21 @@ export default function DashboardPage() {
     onError: (error: Error) => toast.error(error.message ?? "Unable to save medication log"),
   });
 
+  const updateMedicationMutation = useMutation({
+    mutationFn: (variables: {
+      id: string;
+      payload: MedicationLogUpdate;
+      childId: string;
+    }) => updateMedicationLog(variables.id, variables.payload),
+    onSuccess: async (_, variables) => {
+      toast.success("Medication log updated");
+      setIsMedicationDialogOpen(false);
+      setEditingMedicationLog(null);
+      await queryClient.invalidateQueries({ queryKey: ["medications", variables.childId] });
+    },
+    onError: (error: Error) => toast.error(error.message ?? "Unable to update medication log"),
+  });
+
   const createVaccineMutation = useMutation({
     mutationFn: createVaccineRecord,
     onSuccess: async () => {
@@ -119,6 +180,25 @@ export default function DashboardPage() {
       await queryClient.invalidateQueries({ queryKey: ["vaccines", selectedChildId] });
     },
     onError: (error: Error) => toast.error(error.message ?? "Unable to save vaccine record"),
+  });
+
+  const updateVaccineMutation = useMutation({
+    mutationFn: (variables: {
+      id: string;
+      payload: VaccineRecordUpdate;
+      childId: string;
+    }) => updateVaccineRecord(variables.id, variables.payload),
+    onSuccess: async (_, variables) => {
+      toast.success("Vaccine record updated");
+      setIsVaccineDialogOpen(false);
+      setEditingVaccineRecord(null);
+      await queryClient.invalidateQueries({ queryKey: ["vaccines", variables.childId] });
+    },
+    onError: (error: Error) => toast.error(error.message ?? "Unable to update vaccine record"),
+  });
+
+  const downloadMedicationPdfMutation = useMutation({
+    mutationFn: (childId: string) => downloadMedicationLogsPdf(childId),
   });
 
   const handleCreateChild = async (values: ChildFormValues) => {
@@ -138,7 +218,20 @@ export default function DashboardPage() {
     }
   };
 
-  const handleCreateGrowth = async (values: GrowthFormValues) => {
+  const handleSaveGrowth = async (values: GrowthFormValues) => {
+    if (editingGrowthLog) {
+      try {
+        await updateGrowthMutation.mutateAsync({
+          id: editingGrowthLog.id,
+          childId: editingGrowthLog.child_id,
+          payload: values,
+        });
+      } catch {
+        // handled by mutation
+      }
+      return;
+    }
+
     if (!selectedChildId) {
       toast.error("Select a child first");
       return;
@@ -154,15 +247,33 @@ export default function DashboardPage() {
     }
   };
 
-  const handleCreateMedication = async (values: MedicationFormValues) => {
+  const handleSaveMedication = async (values: MedicationFormValues) => {
+    const formattedPayload: MedicationLogUpdate = {
+      medicine_name: values.medicine_name,
+      dosage: values.dosage?.trim() ? values.dosage.trim() : null,
+      administered_at: values.administered_at,
+    };
+
+    if (editingMedicationLog) {
+      try {
+        await updateMedicationMutation.mutateAsync({
+          id: editingMedicationLog.id,
+          childId: editingMedicationLog.child_id,
+          payload: formattedPayload,
+        });
+      } catch {
+        // handled by mutation
+      }
+      return;
+    }
+
     if (!selectedChildId) {
       toast.error("Select a child first");
       return;
     }
     try {
       await createMedicationMutation.mutateAsync({
-        ...values,
-        dosage: values.dosage?.trim() || null,
+        ...formattedPayload,
         child_id: selectedChildId,
       });
     } catch {
@@ -170,7 +281,20 @@ export default function DashboardPage() {
     }
   };
 
-  const handleCreateVaccine = async (values: VaccineFormValues) => {
+  const handleSaveVaccine = async (values: VaccineFormValues) => {
+    if (editingVaccineRecord) {
+      try {
+        await updateVaccineMutation.mutateAsync({
+          id: editingVaccineRecord.id,
+          childId: editingVaccineRecord.child_id,
+          payload: values,
+        });
+      } catch {
+        // handled by mutation
+      }
+      return;
+    }
+
     if (!selectedChildId) {
       toast.error("Select a child first");
       return;
@@ -183,6 +307,51 @@ export default function DashboardPage() {
     } catch {
       // handled by mutation
     }
+  };
+
+  const handleDownloadMedicationPdf = async () => {
+    if (!selectedChildId) {
+      toast.error("Select a child first");
+      return;
+    }
+
+    try {
+      const blob = await downloadMedicationPdfMutation.mutateAsync(selectedChildId);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const fileName = `${makeSafeFileName(activeChild?.name)}_medication_logs.pdf`;
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success("Medication log PDF downloaded");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to download medication logs";
+      toast.error(message);
+    }
+  };
+
+  const handleGrowthDialogOpenChange = (open: boolean) => {
+    if (!open) {
+      setEditingGrowthLog(null);
+    }
+    setIsGrowthDialogOpen(open);
+  };
+
+  const handleMedicationDialogOpenChange = (open: boolean) => {
+    if (!open) {
+      setEditingMedicationLog(null);
+    }
+    setIsMedicationDialogOpen(open);
+  };
+
+  const handleVaccineDialogOpenChange = (open: boolean) => {
+    if (!open) {
+      setEditingVaccineRecord(null);
+    }
+    setIsVaccineDialogOpen(open);
   };
 
   const handleLogout = () => {
@@ -232,6 +401,39 @@ export default function DashboardPage() {
     },
   ];
 
+  const growthDialogInitialValues = useMemo(() => {
+    if (!editingGrowthLog) {
+      return null;
+    }
+    return {
+      record_date: editingGrowthLog.record_date,
+      weight_kg: editingGrowthLog.weight_kg,
+      height_cm: editingGrowthLog.height_cm,
+    };
+  }, [editingGrowthLog]);
+
+  const medicationDialogInitialValues = useMemo(() => {
+    if (!editingMedicationLog) {
+      return null;
+    }
+    return {
+      medicine_name: editingMedicationLog.medicine_name,
+      dosage: editingMedicationLog.dosage ?? "",
+      administered_at: toDateTimeInputValue(editingMedicationLog.administered_at),
+    };
+  }, [editingMedicationLog]);
+
+  const vaccineDialogInitialValues = useMemo(() => {
+    if (!editingVaccineRecord) {
+      return null;
+    }
+    return {
+      vaccine_name: editingVaccineRecord.vaccine_name,
+      scheduled_date: editingVaccineRecord.scheduled_date,
+      status: editingVaccineRecord.status,
+    };
+  }, [editingVaccineRecord]);
+
   return (
     <div className="container mx-auto space-y-8 px-4 py-10">
       <section className="rounded-2xl border bg-gradient-to-br from-blue-50 via-white to-white p-6 shadow-sm">
@@ -252,7 +454,7 @@ export default function DashboardPage() {
             <Button
               className="gap-2"
               variant="secondary"
-              onClick={() => setIsGrowthDialogOpen(true)}
+              onClick={() => handleGrowthDialogOpenChange(true)}
               disabled={!selectedChildId}
             >
               <Ruler className="h-4 w-4" />
@@ -358,7 +560,7 @@ export default function DashboardPage() {
                           <p className="text-sm text-muted-foreground">Capture weight and height changes over time.</p>
                         </div>
                         {child.id === selectedChildId && (
-                          <Button size="sm" variant="secondary" className="gap-2" onClick={() => setIsGrowthDialogOpen(true)}>
+                          <Button size="sm" variant="secondary" className="gap-2" onClick={() => handleGrowthDialogOpenChange(true)}>
                             <Scale className="h-4 w-4" />
                             Log Growth
                           </Button>
@@ -372,6 +574,7 @@ export default function DashboardPage() {
                                 <TableHead>Date</TableHead>
                                 <TableHead>Weight (kg)</TableHead>
                                 <TableHead>Height (cm)</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -380,6 +583,18 @@ export default function DashboardPage() {
                                   <TableCell>{formatDate(log.record_date)}</TableCell>
                                   <TableCell>{log.weight_kg.toFixed(2)}</TableCell>
                                   <TableCell>{log.height_cm.toFixed(1)}</TableCell>
+                                  <TableCell className="text-right">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        setEditingGrowthLog(log);
+                                        handleGrowthDialogOpenChange(true);
+                                      }}
+                                    >
+                                      Edit
+                                    </Button>
+                                  </TableCell>
                                 </TableRow>
                               ))}
                             </TableBody>
@@ -391,7 +606,7 @@ export default function DashboardPage() {
                           <p className="text-base font-semibold">No growth logs yet</p>
                           <p className="mb-4 text-sm text-muted-foreground">Record the first measurements to visualize progress.</p>
                           {child.id === selectedChildId && (
-                            <Button size="sm" className="gap-2" onClick={() => setIsGrowthDialogOpen(true)}>
+                            <Button size="sm" className="gap-2" onClick={() => handleGrowthDialogOpenChange(true)}>
                               <Plus className="h-4 w-4" />
                               Add log
                             </Button>
@@ -402,23 +617,35 @@ export default function DashboardPage() {
                   </div>
                   <div className="mt-6 grid gap-6 lg:grid-cols-2">
                     <Card className="rounded-2xl border bg-white shadow-sm">
-                      <CardHeader className="flex flex-row items-center justify-between">
+                      <CardHeader className="flex flex-row items-center justify-between gap-3">
                         <div>
                           <CardTitle className="text-base font-semibold">Medication log</CardTitle>
                           <CardDescription>Track administered medicines and dosages.</CardDescription>
                         </div>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="gap-2"
-                          onClick={() => {
-                            setActiveChildId(child.id);
-                            setIsMedicationDialogOpen(true);
-                          }}
-                        >
-                          <Pill className="h-4 w-4" />
-                          Log dose
-                        </Button>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="gap-2"
+                            onClick={() => {
+                              setActiveChildId(child.id);
+                              handleMedicationDialogOpenChange(true);
+                            }}
+                          >
+                            <Pill className="h-4 w-4" />
+                            Log dose
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-2"
+                            onClick={handleDownloadMedicationPdf}
+                            disabled={!selectedChildId || downloadMedicationPdfMutation.isPending}
+                          >
+                            <Download className="h-4 w-4" />
+                            {downloadMedicationPdfMutation.isPending ? "Preparing..." : "Download PDF"}
+                          </Button>
+                        </div>
                       </CardHeader>
                       <CardContent>
                         {child.id === selectedChildId && orderedMedicationLogs.length > 0 ? (
@@ -429,14 +656,27 @@ export default function DashboardPage() {
                                   <TableHead>Medicine</TableHead>
                                   <TableHead>Dosage</TableHead>
                                   <TableHead>Administered</TableHead>
+                                  <TableHead className="text-right">Actions</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
                                 {orderedMedicationLogs.slice(0, 5).map((log) => (
                                   <TableRow key={log.id}>
                                     <TableCell className="font-medium">{log.medicine_name}</TableCell>
-                                    <TableCell>{log.dosage ?? "—"}</TableCell>
+                                    <TableCell>{log.dosage ?? "--"}</TableCell>
                                     <TableCell>{formatDateTime(log.administered_at)}</TableCell>
+                                    <TableCell className="text-right">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                          setEditingMedicationLog(log);
+                                          handleMedicationDialogOpenChange(true);
+                                        }}
+                                      >
+                                        Edit
+                                      </Button>
+                                    </TableCell>
                                   </TableRow>
                                 ))}
                               </TableBody>
@@ -462,7 +702,7 @@ export default function DashboardPage() {
                           className="gap-2"
                           onClick={() => {
                             setActiveChildId(child.id);
-                            setIsVaccineDialogOpen(true);
+                            handleVaccineDialogOpenChange(true);
                           }}
                         >
                           <Shield className="h-4 w-4" />
@@ -478,6 +718,7 @@ export default function DashboardPage() {
                                   <TableHead>Vaccine</TableHead>
                                   <TableHead>Date</TableHead>
                                   <TableHead>Status</TableHead>
+                                  <TableHead className="text-right">Actions</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -496,6 +737,18 @@ export default function DashboardPage() {
                                       >
                                         {record.status === "COMPLETED" ? "Completed" : "Pending"}
                                       </span>
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                          setEditingVaccineRecord(record);
+                                          handleVaccineDialogOpenChange(true);
+                                        }}
+                                      >
+                                        Edit
+                                      </Button>
                                     </TableCell>
                                   </TableRow>
                                 ))}
@@ -526,22 +779,28 @@ export default function DashboardPage() {
       />
       <AddGrowthLogDialog
         open={isGrowthDialogOpen}
-        onOpenChange={setIsGrowthDialogOpen}
-        onSubmit={handleCreateGrowth}
-        isSubmitting={createGrowthMutation.isPending}
+        onOpenChange={handleGrowthDialogOpenChange}
+        onSubmit={handleSaveGrowth}
+        isSubmitting={createGrowthMutation.isPending || updateGrowthMutation.isPending}
         childName={activeChild?.name}
+        mode={editingGrowthLog ? "edit" : "create"}
+        initialValues={growthDialogInitialValues}
       />
       <AddMedicationLogDialog
         open={isMedicationDialogOpen}
-        onOpenChange={setIsMedicationDialogOpen}
-        onSubmit={handleCreateMedication}
-        isSubmitting={createMedicationMutation.isPending}
+        onOpenChange={handleMedicationDialogOpenChange}
+        onSubmit={handleSaveMedication}
+        isSubmitting={createMedicationMutation.isPending || updateMedicationMutation.isPending}
+        mode={editingMedicationLog ? "edit" : "create"}
+        initialValues={medicationDialogInitialValues}
       />
       <AddVaccineRecordDialog
         open={isVaccineDialogOpen}
-        onOpenChange={setIsVaccineDialogOpen}
-        onSubmit={handleCreateVaccine}
-        isSubmitting={createVaccineMutation.isPending}
+        onOpenChange={handleVaccineDialogOpenChange}
+        onSubmit={handleSaveVaccine}
+        isSubmitting={createVaccineMutation.isPending || updateVaccineMutation.isPending}
+        mode={editingVaccineRecord ? "edit" : "create"}
+        initialValues={vaccineDialogInitialValues}
       />
     </div>
   );

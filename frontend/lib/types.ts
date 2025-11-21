@@ -70,6 +70,12 @@ export interface GrowthLogRead {
   child_id: string;
 }
 
+export interface GrowthLogUpdate {
+  record_date?: string;
+  weight_kg?: number;
+  height_cm?: number;
+}
+
 export interface MedicationLogCreate {
   medicine_name: string;
   dosage?: string | null;
@@ -85,6 +91,12 @@ export interface MedicationLogRead {
   child_id: string;
 }
 
+export interface MedicationLogUpdate {
+  medicine_name?: string;
+  dosage?: string | null;
+  administered_at?: string;
+}
+
 export interface VaccineRecordCreate {
   vaccine_name: string;
   scheduled_date: string;
@@ -98,4 +110,10 @@ export interface VaccineRecordRead {
   status: VaccineStatus;
   id: string;
   child_id: string;
+}
+
+export interface VaccineRecordUpdate {
+  vaccine_name?: string;
+  scheduled_date?: string;
+  status?: VaccineStatus;
 }

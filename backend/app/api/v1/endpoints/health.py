@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from io import BytesIO
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,20 +14,245 @@ from app.models.all_models import Child, GrowthLog, MedicationLog, User, Vaccine
 from app.schemas.health import (
     GrowthLogCreate,
     GrowthLogRead,
+    GrowthLogUpdate,
     MedicationLogCreate,
     MedicationLogRead,
+    MedicationLogUpdate,
     VaccineRecordCreate,
     VaccineRecordRead,
+    VaccineRecordUpdate,
 )
+
+from fpdf import FPDF
 
 router = APIRouter(prefix="/health", tags=["health"])
 
 
 async def _assert_child_belongs(child_id: str, session: AsyncSession, user: User) -> None:
-    stmt = select(Child.id).where(Child.id == child_id, Child.parent_id == user.id)
+    await _get_child(child_id, session, user)
+
+
+async def _get_child(child_id: str, session: AsyncSession, user: User) -> Child:
+    stmt = select(Child).where(Child.id == child_id, Child.parent_id == user.id)
     result = await session.execute(stmt)
-    if result.scalar_one_or_none() is None:
+    child = result.scalar_one_or_none()
+    if child is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Child not found")
+    return child
+
+
+async def _get_growth_log(log_id: str, session: AsyncSession, user: User) -> GrowthLog:
+    stmt = (
+        select(GrowthLog)
+        .join(Child, GrowthLog.child_id == Child.id)
+        .where(GrowthLog.id == log_id, Child.parent_id == user.id)
+    )
+    result = await session.execute(stmt)
+    log = result.scalar_one_or_none()
+    if log is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Growth log not found")
+    return log
+
+
+async def _get_medication_log(log_id: str, session: AsyncSession, user: User) -> MedicationLog:
+    stmt = (
+        select(MedicationLog)
+        .join(Child, MedicationLog.child_id == Child.id)
+        .where(MedicationLog.id == log_id, Child.parent_id == user.id)
+    )
+    result = await session.execute(stmt)
+    log = result.scalar_one_or_none()
+    if log is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Medication log not found"
+        )
+    return log
+
+
+async def _get_vaccine_record(record_id: str, session: AsyncSession, user: User) -> VaccineRecord:
+    stmt = (
+        select(VaccineRecord)
+        .join(Child, VaccineRecord.child_id == Child.id)
+        .where(VaccineRecord.id == record_id, Child.parent_id == user.id)
+    )
+    result = await session.execute(stmt)
+    record = result.scalar_one_or_none()
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Vaccine record not found"
+        )
+    return record
+
+
+def _format_administered_at(value: datetime) -> str:
+    if value.tzinfo is not None:
+        value = value.astimezone(timezone.utc)
+        return value.strftime("%Y-%m-%d %H:%M %Z")
+    return value.strftime("%Y-%m-%d %H:%M")
+
+
+def _build_medication_filename(name: str) -> str:
+    slug = "".join(char if char.isalnum() else "_" for char in name.lower())
+    slug = "_".join(filter(None, slug.split("_")))
+    return slug or "medication"
+
+
+def _truncate(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    if limit <= 3:
+        return text[:limit]
+    return text[: limit - 3] + "..."
+
+
+def _generate_medication_log_pdf(
+    child: Child,
+    parent: User,
+    logs: list[MedicationLog],
+) -> bytes:
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    _render_pdf_header(pdf)
+    pdf.set_y(45)
+    _render_patient_summary(pdf, child, parent, logs)
+    pdf.ln(8)
+    _render_medication_log_table(pdf, logs)
+
+    output = pdf.output(dest="S")
+    if isinstance(output, str):
+        return output.encode("latin-1")
+    return bytes(output)
+
+
+def _render_pdf_header(pdf: FPDF) -> None:
+    pdf.set_fill_color(240, 245, 255)
+    pdf.rect(10, 10, 190, 30, "F")
+
+    # Minimal logo
+    pdf.set_fill_color(99, 102, 241)
+    pdf.ellipse(18, 16, 18, 18, "F")
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_xy(18, 21)
+    pdf.cell(18, 6, "NH", align="C")
+
+    pdf.set_xy(40, 18)
+    pdf.set_text_color(15, 23, 42)
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 8, "Newborn Health Tracker", ln=1)
+    pdf.set_x(40)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.set_text_color(71, 85, 105)
+    pdf.cell(0, 6, "Medication Summary for Physicians", ln=1)
+
+
+def _render_patient_summary(
+    pdf: FPDF,
+    child: Child,
+    parent: User,
+    logs: list[MedicationLog],
+) -> None:
+    parent_label = parent.full_name or parent.email or "Parent/Guardian"
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M %Z")
+    latest_log = logs[0] if logs else None
+
+    summary_rows = [
+        ("Child", child.name),
+        ("Date of birth", child.dob.strftime("%Y-%m-%d")),
+        ("Parent / guardian", parent_label),
+        ("Report generated", generated_at),
+        ("Total entries", f"{len(logs)}"),
+        (
+            "Last medication",
+            _format_administered_at(latest_log.administered_at) if latest_log else "No entries yet",
+        ),
+    ]
+
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.set_text_color(15, 23, 42)
+    pdf.cell(0, 8, "Patient overview", ln=1)
+    pdf.ln(2)
+
+    for label, value in summary_rows:
+        _render_summary_row(pdf, label, value)
+
+
+def _render_summary_row(pdf: FPDF, label: str, value: str) -> None:
+    label_width = 45
+    left_margin = pdf.l_margin
+    right_margin = pdf.r_margin
+    usable_width = pdf.w - left_margin - right_margin - label_width
+    usable_width = max(usable_width, 40)
+
+    start_y = pdf.get_y()
+    pdf.set_xy(left_margin, start_y)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_text_color(100, 116, 139)
+    pdf.cell(label_width, 7, label.upper())
+
+    pdf.set_font("Helvetica", "", 11)
+    pdf.set_text_color(15, 23, 42)
+    pdf.set_xy(left_margin + label_width, start_y)
+    pdf.multi_cell(usable_width, 7, value)
+
+
+def _render_medication_log_table(pdf: FPDF, logs: list[MedicationLog]) -> None:
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.set_text_color(15, 23, 42)
+    pdf.cell(0, 8, "Medication administration log", ln=1)
+    pdf.ln(2)
+
+    if not logs:
+        pdf.set_font("Helvetica", "I", 11)
+        pdf.set_text_color(71, 85, 105)
+        pdf.multi_cell(
+            0,
+            8,
+            "No medication entries have been recorded yet. Encourage families to record each dose for accurate clinical history.",
+        )
+        return
+
+    headers = [
+        ("Administered (UTC)", 48),
+        ("Medication", 60),
+        ("Dosage", 30),
+        ("Log ID", 52),
+    ]
+
+    pdf.set_fill_color(59, 130, 246)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 10)
+    for label, width in headers:
+        pdf.cell(width, 8, label, border=0, align="L", fill=True)
+    pdf.ln()
+
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(15, 23, 42)
+    for index, log in enumerate(logs):
+        is_even_row = index % 2 == 0
+        if is_even_row:
+            pdf.set_fill_color(248, 250, 252)
+        else:
+            pdf.set_fill_color(255, 255, 255)
+
+        pdf.cell(headers[0][1], 8, _format_administered_at(log.administered_at), fill=True)
+        pdf.cell(headers[1][1], 8, _truncate(log.medicine_name, 32), fill=True)
+        pdf.cell(headers[2][1], 8, _truncate(log.dosage or "Not specified", 18), fill=True)
+        pdf.set_font("Courier", "", 9)
+        pdf.cell(headers[3][1], 8, log.id, fill=True)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.ln()
+
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(100, 116, 139)
+    pdf.multi_cell(
+        0,
+        6,
+        "For any adjustments to dosage or timing, please update the digital record immediately to keep the care team in sync.",
+    )
 
 
 @router.get("/growth", response_model=list[GrowthLogRead])
@@ -56,6 +285,32 @@ async def create_growth_log(
     await session.commit()
     await session.refresh(log)
     return log
+
+
+@router.put("/growth/{log_id}", response_model=GrowthLogRead)
+async def update_growth_log(
+    log_id: str,
+    payload: GrowthLogUpdate,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> GrowthLog:
+    log = await _get_growth_log(log_id, session, current_user)
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(log, key, value)
+    await session.commit()
+    await session.refresh(log)
+    return log
+
+
+@router.delete("/growth/{log_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_growth_log(
+    log_id: str,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    log = await _get_growth_log(log_id, session, current_user)
+    await session.delete(log)
+    await session.commit()
 
 
 @router.get("/medications", response_model=list[MedicationLogRead])
@@ -92,6 +347,52 @@ async def create_medication_log(
     return log
 
 
+@router.get("/medications/export/pdf")
+async def download_medication_logs_pdf(
+    child_id: str = Query(..., description="Child identifier whose medication logs will be exported"),
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    child = await _get_child(child_id, session, current_user)
+    stmt = (
+        select(MedicationLog)
+        .where(MedicationLog.child_id == child.id)
+        .order_by(MedicationLog.administered_at.desc())
+    )
+    result = await session.execute(stmt)
+    logs = result.scalars().all()
+    pdf_bytes = _generate_medication_log_pdf(child, current_user, logs)
+    filename = f"{_build_medication_filename(child.name)}_medication_logs.pdf"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(BytesIO(pdf_bytes), media_type="application/pdf", headers=headers)
+
+
+@router.put("/medications/{log_id}", response_model=MedicationLogRead)
+async def update_medication_log(
+    log_id: str,
+    payload: MedicationLogUpdate,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> MedicationLog:
+    log = await _get_medication_log(log_id, session, current_user)
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(log, key, value)
+    await session.commit()
+    await session.refresh(log)
+    return log
+
+
+@router.delete("/medications/{log_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_medication_log(
+    log_id: str,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    log = await _get_medication_log(log_id, session, current_user)
+    await session.delete(log)
+    await session.commit()
+
+
 @router.get("/vaccines", response_model=list[VaccineRecordRead])
 async def list_vaccine_records(
     child_id: str | None = Query(None),
@@ -122,3 +423,29 @@ async def create_vaccine_record(
     await session.commit()
     await session.refresh(record)
     return record
+
+
+@router.put("/vaccines/{record_id}", response_model=VaccineRecordRead)
+async def update_vaccine_record(
+    record_id: str,
+    payload: VaccineRecordUpdate,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> VaccineRecord:
+    record = await _get_vaccine_record(record_id, session, current_user)
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(record, key, value)
+    await session.commit()
+    await session.refresh(record)
+    return record
+
+
+@router.delete("/vaccines/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_vaccine_record(
+    record_id: str,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    record = await _get_vaccine_record(record_id, session, current_user)
+    await session.delete(record)
+    await session.commit()

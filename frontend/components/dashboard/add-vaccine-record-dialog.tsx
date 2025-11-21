@@ -23,34 +23,46 @@ interface AddVaccineRecordDialogProps {
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: VaccineFormValues) => Promise<void> | void;
   isSubmitting: boolean;
+  mode?: "create" | "edit";
+  initialValues?: VaccineFormValues | null;
 }
 
-export function AddVaccineRecordDialog({ open, onOpenChange, onSubmit, isSubmitting }: AddVaccineRecordDialogProps) {
+const getDefaultVaccineValues = (): VaccineFormValues => ({
+  vaccine_name: "",
+  scheduled_date: new Date().toISOString().slice(0, 10),
+  status: "PENDING",
+});
+
+export function AddVaccineRecordDialog({
+  open,
+  onOpenChange,
+  onSubmit,
+  isSubmitting,
+  mode = "create",
+  initialValues,
+}: AddVaccineRecordDialogProps) {
+  const isEdit = mode === "edit";
   const form = useForm<VaccineFormValues>({
     resolver: zodResolver(vaccineSchema),
-    defaultValues: {
-      vaccine_name: "",
-      scheduled_date: new Date().toISOString().slice(0, 10),
-      status: "PENDING",
-    },
+    defaultValues: getDefaultVaccineValues(),
   });
 
   useEffect(() => {
-    if (!open) {
-      form.reset({
-        vaccine_name: "",
-        scheduled_date: new Date().toISOString().slice(0, 10),
-        status: "PENDING",
-      });
+    if (open) {
+      form.reset(initialValues ?? getDefaultVaccineValues());
+    } else {
+      form.reset(getDefaultVaccineValues());
     }
-  }, [form, open]);
+  }, [form, initialValues, open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Schedule vaccine</DialogTitle>
-          <DialogDescription>Track upcoming or completed vaccine milestones.</DialogDescription>
+          <DialogTitle>{isEdit ? "Edit vaccine record" : "Schedule vaccine"}</DialogTitle>
+          <DialogDescription>
+            {isEdit ? "Adjust the vaccine details." : "Track upcoming or completed vaccine milestones."}
+          </DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form
@@ -109,7 +121,7 @@ export function AddVaccineRecordDialog({ open, onOpenChange, onSubmit, isSubmitt
             />
             <DialogFooter>
               <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitting}>
-                {isSubmitting ? "Saving..." : "Save record"}
+                {isSubmitting ? "Saving..." : isEdit ? "Update record" : "Save record"}
               </Button>
             </DialogFooter>
           </form>
