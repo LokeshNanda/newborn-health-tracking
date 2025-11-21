@@ -12,11 +12,13 @@ import { Button } from "@/components/ui/button";
 const growthSchema = z.object({
   record_date: z.string().min(1, { message: "Date is required" }),
   weight_kg: z
-    .number({ invalid_type_error: "Enter a weight" })
+    .number()
+    .refine((value) => Number.isFinite(value), { message: "Enter a valid weight" })
     .positive("Weight must be positive")
     .max(20, "Weight must be realistic"),
   height_cm: z
-    .number({ invalid_type_error: "Enter a height" })
+    .number()
+    .refine((value) => Number.isFinite(value), { message: "Enter a valid height" })
     .positive("Height must be positive")
     .max(120, "Height must be realistic"),
 });

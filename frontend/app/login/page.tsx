@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
-import { useGoogleLogin } from "@react-oauth/google";
+import { useGoogleLogin, type TokenResponse } from "@react-oauth/google";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -168,12 +168,13 @@ function GoogleLoginButton({ isLoading, onToken }: { isLoading: boolean; onToken
   const googleLoginHandler = useGoogleLogin({
     flow: "implicit",
     scope: "openid profile email",
-    onSuccess: (response) => {
-      if (!response.id_token) {
+    onSuccess: (response: TokenResponse) => {
+      const idToken = (response as TokenResponse & { id_token?: string }).id_token;
+      if (!idToken) {
         toast.error("Missing Google token");
         return;
       }
-      onToken(response.id_token);
+      onToken(idToken);
     },
     onError: () => toast.error("Google login was cancelled"),
   });

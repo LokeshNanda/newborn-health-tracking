@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
@@ -15,10 +15,16 @@ import { registerUser } from "@/lib/api";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const registerSchema = z.object({
-  full_name: z.preprocess(
-    (value) => (typeof value === "string" && value.trim().length === 0 ? undefined : value),
-    z.string().min(2, { message: "Name must be at least 2 characters" }).optional(),
-  ),
+  full_name: z
+    .string()
+    .optional()
+    .transform((value) => {
+      const next = value?.trim();
+      return next ? next : undefined;
+    })
+    .refine((val) => val === undefined || val.length >= 2, {
+      message: "Name must be at least 2 characters",
+    }),
   email: z.string().email({ message: "Enter a valid email" }),
   password: z.string().min(8, { message: "Password must be at least 8 characters" }),
 });
@@ -29,11 +35,11 @@ export default function RegisterPage() {
   const router = useRouter();
 
   const form = useForm<RegisterValues>({
-    resolver: zodResolver(registerSchema),
+    resolver: zodResolver(registerSchema) as Resolver<RegisterValues>,
     defaultValues: {
       email: "",
       password: "",
-      full_name: "",
+      full_name: undefined,
     },
   });
 
