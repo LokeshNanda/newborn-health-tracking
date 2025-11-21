@@ -313,7 +313,7 @@ export default function DashboardPage() {
   };
 
   const handleSaveMedication = async (values: MedicationFormValues) => {
-    const formattedPayload: MedicationLogUpdate = {
+    const basePayload = {
       medicine_name: values.medicine_name,
       dosage: values.dosage?.trim() ? values.dosage.trim() : null,
       administered_at: values.administered_at,
@@ -324,7 +324,7 @@ export default function DashboardPage() {
         await updateMedicationMutation.mutateAsync({
           id: editingMedicationLog.id,
           childId: editingMedicationLog.child_id,
-          payload: formattedPayload,
+          payload: basePayload,
         });
       } catch {
         // handled by mutation
@@ -338,7 +338,7 @@ export default function DashboardPage() {
     }
     try {
       await createMedicationMutation.mutateAsync({
-        ...formattedPayload,
+        ...basePayload,
         child_id: selectedChildId,
       });
     } catch {
