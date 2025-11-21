@@ -13,6 +13,8 @@ from app.db.session import get_db_session
 from app.core.vaccine_schedule import WHO_VACCINE_SCHEDULE
 from app.models.all_models import (
     Child,
+    ChildMember,
+    ChildRole,
     GrowthLog,
     MedicationLog,
     User,
@@ -30,66 +32,66 @@ from app.schemas.health import (
     VaccineRecordRead,
     VaccineRecordUpdate,
 )
+from app.services.child_access import get_child_and_membership, require_child_role
 
 from fpdf import FPDF
 
 router = APIRouter(prefix="/health", tags=["health"])
 
-
-async def _assert_child_belongs(child_id: str, session: AsyncSession, user: User) -> None:
-    await _get_child(child_id, session, user)
+EDIT_ROLES: set[ChildRole] = {ChildRole.PRIMARY_GUARDIAN, ChildRole.CAREGIVER}
 
 
-async def _get_child(child_id: str, session: AsyncSession, user: User) -> Child:
-    stmt = select(Child).where(Child.id == child_id, Child.parent_id == user.id)
-    result = await session.execute(stmt)
-    child = result.scalar_one_or_none()
-    if child is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Child not found")
-    return child
+def _ensure_edit_permission(member: ChildMember) -> None:
+    if member.role not in EDIT_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
 
-async def _get_growth_log(log_id: str, session: AsyncSession, user: User) -> GrowthLog:
+async def _get_growth_log(log_id: str, session: AsyncSession, user: User) -> tuple[GrowthLog, ChildMember]:
     stmt = (
-        select(GrowthLog)
+        select(GrowthLog, ChildMember)
         .join(Child, GrowthLog.child_id == Child.id)
-        .where(GrowthLog.id == log_id, Child.parent_id == user.id)
+        .join(ChildMember, ChildMember.child_id == Child.id)
+        .where(GrowthLog.id == log_id, ChildMember.user_id == user.id)
     )
     result = await session.execute(stmt)
-    log = result.scalar_one_or_none()
-    if log is None:
+    row = result.one_or_none()
+    if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Growth log not found")
-    return log
+    return row
 
 
-async def _get_medication_log(log_id: str, session: AsyncSession, user: User) -> MedicationLog:
+async def _get_medication_log(log_id: str, session: AsyncSession, user: User) -> tuple[MedicationLog, ChildMember]:
     stmt = (
-        select(MedicationLog)
+        select(MedicationLog, ChildMember)
         .join(Child, MedicationLog.child_id == Child.id)
-        .where(MedicationLog.id == log_id, Child.parent_id == user.id)
+        .join(ChildMember, ChildMember.child_id == Child.id)
+        .where(MedicationLog.id == log_id, ChildMember.user_id == user.id)
     )
     result = await session.execute(stmt)
-    log = result.scalar_one_or_none()
-    if log is None:
+    row = result.one_or_none()
+    if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Medication log not found"
         )
-    return log
+    return row
 
 
-async def _get_vaccine_record(record_id: str, session: AsyncSession, user: User) -> VaccineRecord:
+async def _get_vaccine_record(
+    record_id: str, session: AsyncSession, user: User
+) -> tuple[VaccineRecord, ChildMember]:
     stmt = (
-        select(VaccineRecord)
+        select(VaccineRecord, ChildMember)
         .join(Child, VaccineRecord.child_id == Child.id)
-        .where(VaccineRecord.id == record_id, Child.parent_id == user.id)
+        .join(ChildMember, ChildMember.child_id == Child.id)
+        .where(VaccineRecord.id == record_id, ChildMember.user_id == user.id)
     )
     result = await session.execute(stmt)
-    record = result.scalar_one_or_none()
-    if record is None:
+    row = result.one_or_none()
+    if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Vaccine record not found"
         )
-    return record
+    return row
 
 
 async def _ensure_recommended_vaccines_for_child(child: Child, session: AsyncSession) -> None:
@@ -410,7 +412,8 @@ async def list_growth_logs(
     stmt = (
         select(GrowthLog)
         .join(Child, GrowthLog.child_id == Child.id)
-        .where(Child.parent_id == current_user.id)
+        .join(ChildMember, ChildMember.child_id == Child.id)
+        .where(ChildMember.user_id == current_user.id)
         .order_by(GrowthLog.record_date.desc())
     )
     if child_id:
@@ -425,7 +428,7 @@ async def create_growth_log(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> GrowthLog:
-    await _assert_child_belongs(payload.child_id, session, current_user)
+    await require_child_role(payload.child_id, session, current_user, allowed_roles=EDIT_ROLES)
     log = GrowthLog(**payload.model_dump())
     session.add(log)
     await session.commit()
@@ -440,7 +443,8 @@ async def update_growth_log(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> GrowthLog:
-    log = await _get_growth_log(log_id, session, current_user)
+    log, membership = await _get_growth_log(log_id, session, current_user)
+    _ensure_edit_permission(membership)
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(log, key, value)
     await session.commit()
@@ -454,7 +458,8 @@ async def delete_growth_log(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> None:
-    log = await _get_growth_log(log_id, session, current_user)
+    log, membership = await _get_growth_log(log_id, session, current_user)
+    _ensure_edit_permission(membership)
     await session.delete(log)
     await session.commit()
 
@@ -468,7 +473,8 @@ async def list_medication_logs(
     stmt = (
         select(MedicationLog)
         .join(Child, MedicationLog.child_id == Child.id)
-        .where(Child.parent_id == current_user.id)
+        .join(ChildMember, ChildMember.child_id == Child.id)
+        .where(ChildMember.user_id == current_user.id)
         .order_by(MedicationLog.administered_at.desc())
     )
     if child_id:
@@ -485,7 +491,7 @@ async def create_medication_log(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> MedicationLog:
-    await _assert_child_belongs(payload.child_id, session, current_user)
+    await require_child_role(payload.child_id, session, current_user, allowed_roles=EDIT_ROLES)
     log = MedicationLog(**payload.model_dump())
     session.add(log)
     await session.commit()
@@ -499,7 +505,7 @@ async def download_medication_logs_pdf(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
-    child = await _get_child(child_id, session, current_user)
+    child, _ = await get_child_and_membership(child_id, session, current_user)
     stmt = (
         select(MedicationLog)
         .where(MedicationLog.child_id == child.id)
@@ -520,7 +526,8 @@ async def update_medication_log(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> MedicationLog:
-    log = await _get_medication_log(log_id, session, current_user)
+    log, membership = await _get_medication_log(log_id, session, current_user)
+    _ensure_edit_permission(membership)
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(log, key, value)
     await session.commit()
@@ -534,7 +541,8 @@ async def delete_medication_log(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> None:
-    log = await _get_medication_log(log_id, session, current_user)
+    log, membership = await _get_medication_log(log_id, session, current_user)
+    _ensure_edit_permission(membership)
     await session.delete(log)
     await session.commit()
 
@@ -546,11 +554,13 @@ async def list_vaccine_records(
     current_user: User = Depends(get_current_user),
 ) -> list[VaccineRecord]:
     if child_id:
-        child = await _get_child(child_id, session, current_user)
+        child, _ = await get_child_and_membership(child_id, session, current_user)
         await _ensure_recommended_vaccines_for_child(child, session)
     else:
         children_result = await session.execute(
-            select(Child).where(Child.parent_id == current_user.id)
+            select(Child)
+            .join(ChildMember, ChildMember.child_id == Child.id)
+            .where(ChildMember.user_id == current_user.id)
         )
         for child in children_result.scalars().all():
             await _ensure_recommended_vaccines_for_child(child, session)
@@ -558,7 +568,8 @@ async def list_vaccine_records(
     stmt = (
         select(VaccineRecord)
         .join(Child, VaccineRecord.child_id == Child.id)
-        .where(Child.parent_id == current_user.id)
+        .join(ChildMember, ChildMember.child_id == Child.id)
+        .where(ChildMember.user_id == current_user.id)
         .order_by(VaccineRecord.scheduled_date.asc())
     )
     if child_id:
@@ -573,7 +584,7 @@ async def create_vaccine_record(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> VaccineRecord:
-    await _assert_child_belongs(payload.child_id, session, current_user)
+    await require_child_role(payload.child_id, session, current_user, allowed_roles=EDIT_ROLES)
     payload_data = payload.model_dump()
     sanitized_admin_date = _sanitize_administered_date(
         payload.status, payload.administered_date, fallback=payload.scheduled_date
@@ -592,7 +603,7 @@ async def download_vaccine_schedule_pdf(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
-    child = await _get_child(child_id, session, current_user)
+    child, _ = await get_child_and_membership(child_id, session, current_user)
     await _ensure_recommended_vaccines_for_child(child, session)
     stmt = (
         select(VaccineRecord)
@@ -614,7 +625,8 @@ async def update_vaccine_record(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> VaccineRecord:
-    record = await _get_vaccine_record(record_id, session, current_user)
+    record, membership = await _get_vaccine_record(record_id, session, current_user)
+    _ensure_edit_permission(membership)
     updates = payload.model_dump(exclude_unset=True)
     if "status" in updates or "administered_date" in updates:
         new_status = updates.get("status", record.status)
@@ -636,6 +648,7 @@ async def delete_vaccine_record(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> None:
-    record = await _get_vaccine_record(record_id, session, current_user)
+    record, membership = await _get_vaccine_record(record_id, session, current_user)
+    _ensure_edit_permission(membership)
     await session.delete(record)
     await session.commit()

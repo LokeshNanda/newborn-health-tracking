@@ -3,6 +3,9 @@ import { API_BASE_URL, AUTH_STORAGE_KEY } from "./constants";
 import type {
   AuthResponse,
   ChildCreate,
+  ChildMemberInvite,
+  ChildMemberRead,
+  ChildMemberUpdate,
   ChildRead,
   GoogleLoginRequest,
   GrowthLogCreate,
@@ -140,4 +143,30 @@ export const downloadVaccineRecordsPdf = async (childId: string) => {
     responseType: "blob",
   });
   return data;
+};
+
+export const getChildMembers = async (childId: string) => {
+  const { data } = await apiClient.get<ChildMemberRead[]>(`/api/v1/children/${childId}/members`);
+  return data;
+};
+
+export const inviteChildMember = async (childId: string, payload: ChildMemberInvite) => {
+  const { data } = await apiClient.post<ChildMemberRead>(`/api/v1/children/${childId}/members`, payload);
+  return data;
+};
+
+export const updateChildMemberRole = async (
+  childId: string,
+  memberId: string,
+  payload: ChildMemberUpdate,
+) => {
+  const { data } = await apiClient.patch<ChildMemberRead>(
+    `/api/v1/children/${childId}/members/${memberId}`,
+    payload,
+  );
+  return data;
+};
+
+export const removeChildMember = async (childId: string, memberId: string) => {
+  await apiClient.delete(`/api/v1/children/${childId}/members/${memberId}`);
 };

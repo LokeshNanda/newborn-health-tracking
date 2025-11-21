@@ -1,6 +1,7 @@
 export type Gender = "MALE" | "FEMALE" | "OTHER";
 
 export type VaccineStatus = "PENDING" | "COMPLETED";
+export type ChildRole = "PRIMARY_GUARDIAN" | "CAREGIVER" | "PEDIATRICIAN";
 
 export interface UserRead {
   email: string;
@@ -120,4 +121,19 @@ export interface VaccineRecordUpdate {
   scheduled_date?: string;
   status?: VaccineStatus;
   administered_date?: string | null;
+}
+
+export interface ChildMemberRead {
+  id: string;
+  role: ChildRole;
+  user: UserRead;
+}
+
+export interface ChildMemberInvite {
+  email: string;
+  role: ChildRole;
+}
+
+export interface ChildMemberUpdate {
+  role: ChildRole;
 }

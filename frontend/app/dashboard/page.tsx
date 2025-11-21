@@ -15,21 +15,26 @@ import {
   createGrowthLog,
   createMedicationLog,
   createVaccineRecord,
+  getChildMembers,
+  inviteChildMember,
+  removeChildMember,
   downloadMedicationLogsPdf,
   downloadVaccineRecordsPdf,
   getChildren,
   getGrowthLogs,
   getMedicationLogs,
   getVaccineRecords,
+  updateChildMemberRole,
   updateGrowthLog,
   updateMedicationLog,
   updateVaccineRecord,
 } from "@/lib/api";
-import { cn, formatDate, formatDateTime } from "@/lib/utils";
+import { cn, formatAge, formatDate, formatDateTime } from "@/lib/utils";
 import { AddChildDialog, type ChildFormValues } from "@/components/dashboard/add-child-dialog";
 import { AddGrowthLogDialog, type GrowthFormValues } from "@/components/dashboard/add-growth-log-dialog";
 import { AddMedicationLogDialog, type MedicationFormValues } from "@/components/dashboard/add-medication-log-dialog";
 import { AddVaccineRecordDialog, type VaccineFormValues } from "@/components/dashboard/add-vaccine-record-dialog";
+import { CareTeamPanel } from "@/components/dashboard/care-team-panel";
 import { GrowthChart } from "@/components/GrowthChart";
 import { Baby, Clock, Download, Pill, Plus, Ruler, Scale, Shield } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -43,6 +48,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type {
+  ChildMemberInvite,
+  ChildRole,
   GrowthLogRead,
   MedicationLogRead,
   MedicationLogUpdate,
@@ -111,6 +118,12 @@ export default function DashboardPage() {
   const vaccineQuery = useQuery({
     queryKey: ["vaccines", selectedChildId],
     queryFn: () => getVaccineRecords(selectedChildId ?? undefined),
+    enabled: Boolean(token && selectedChildId),
+  });
+
+  const careTeamQuery = useQuery({
+    queryKey: ["care-team", selectedChildId],
+    queryFn: () => getChildMembers(selectedChildId ?? ""),
     enabled: Boolean(token && selectedChildId),
   });
 
@@ -209,6 +222,48 @@ export default function DashboardPage() {
 
   const downloadVaccinePdfMutation = useMutation({
     mutationFn: (childId: string) => downloadVaccineRecordsPdf(childId),
+  });
+
+  const inviteCareTeamMutation = useMutation({
+    mutationFn: async (payload: ChildMemberInvite) => {
+      if (!selectedChildId) {
+        throw new Error("Select a child first");
+      }
+      return inviteChildMember(selectedChildId, payload);
+    },
+    onSuccess: async () => {
+      toast.success("Care team member added");
+      await queryClient.invalidateQueries({ queryKey: ["care-team", selectedChildId] });
+    },
+    onError: (error: Error) => toast.error(error.message ?? "Unable to add member"),
+  });
+
+  const updateCareTeamMutation = useMutation({
+    mutationFn: async ({ memberId, role }: { memberId: string; role: ChildRole }) => {
+      if (!selectedChildId) {
+        throw new Error("Select a child first");
+      }
+      return updateChildMemberRole(selectedChildId, memberId, { role });
+    },
+    onSuccess: async () => {
+      toast.success("Role updated");
+      await queryClient.invalidateQueries({ queryKey: ["care-team", selectedChildId] });
+    },
+    onError: (error: Error) => toast.error(error.message ?? "Unable to update role"),
+  });
+
+  const removeCareTeamMutation = useMutation({
+    mutationFn: async (memberId: string) => {
+      if (!selectedChildId) {
+        throw new Error("Select a child first");
+      }
+      await removeChildMember(selectedChildId, memberId);
+    },
+    onSuccess: async () => {
+      toast.success("Member removed");
+      await queryClient.invalidateQueries({ queryKey: ["care-team", selectedChildId] });
+    },
+    onError: (error: Error) => toast.error(error.message ?? "Unable to remove member"),
   });
 
   const handleCreateChild = async (values: ChildFormValues) => {
@@ -372,6 +427,42 @@ export default function DashboardPage() {
     }
   };
 
+  const handleInviteCareTeam = async (values: ChildMemberInvite) => {
+    if (!selectedChildId) {
+      toast.error("Select a child first");
+      return;
+    }
+    try {
+      await inviteCareTeamMutation.mutateAsync(values);
+    } catch {
+      // handled via mutation
+    }
+  };
+
+  const handleUpdateCareTeamRole = async (memberId: string, role: ChildRole) => {
+    if (!selectedChildId) {
+      toast.error("Select a child first");
+      return;
+    }
+    try {
+      await updateCareTeamMutation.mutateAsync({ memberId, role });
+    } catch {
+      // handled
+    }
+  };
+
+  const handleRemoveCareTeamMember = async (memberId: string) => {
+    if (!selectedChildId) {
+      toast.error("Select a child first");
+      return;
+    }
+    try {
+      await removeCareTeamMutation.mutateAsync(memberId);
+    } catch {
+      // handled
+    }
+  };
+
   const handleGrowthDialogOpenChange = (open: boolean) => {
     if (!open) {
       setEditingGrowthLog(null);
@@ -403,6 +494,10 @@ export default function DashboardPage() {
   const growthLogs = growthQuery.data ?? [];
   const medicationLogs = medicationQuery.data ?? [];
   const vaccineRecords = vaccineQuery.data ?? [];
+  const careTeamMembers = careTeamQuery.data ?? [];
+  const currentCareTeamMember =
+    careTeamMembers.find((member) => member.user.id === user?.id) ?? null;
+  const canManageCareTeam = currentCareTeamMember?.role === "PRIMARY_GUARDIAN";
 
   const orderedGrowthLogs = growthLogs
     .slice()
@@ -429,7 +524,9 @@ export default function DashboardPage() {
     {
       label: "Active child",
       value: activeChild ? activeChild.name : "Not selected",
-      meta: activeChild ? `DOB ${formatDate(activeChild.dob)}` : "Add a child to get started",
+      meta: activeChild
+        ? `DOB ${formatDate(activeChild.dob)} • Age ${formatAge(activeChild.dob)}`
+        : "Add a child to get started",
       icon: Ruler,
     },
     {
@@ -560,7 +657,7 @@ export default function DashboardPage() {
               {children.map((child) => (
                 <TabsContent key={child.id} value={child.id}>
                   <div className="grid gap-6 lg:grid-cols-2">
-                    <div className="space-y-4 rounded-2xl border bg-white p-6 shadow-sm">
+                    <div className="space-y-6 rounded-2xl border bg-white p-6 shadow-sm">
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-xs uppercase text-muted-foreground">Profile overview</p>
@@ -571,6 +668,7 @@ export default function DashboardPage() {
                         <div>
                           <p className="text-muted-foreground">Date of birth</p>
                           <p className="font-medium">{formatDate(child.dob)}</p>
+                          <p className="text-xs text-muted-foreground">Age {formatAge(child.dob)}</p>
                         </div>
                         <div>
                           <p className="text-muted-foreground">Gender</p>
@@ -604,6 +702,21 @@ export default function DashboardPage() {
                           />
                         </div>
                       </div>
+                      {child.id === selectedChildId ? (
+                        <CareTeamPanel
+                          members={careTeamMembers}
+                          loading={careTeamQuery.isLoading}
+                          canManage={Boolean(canManageCareTeam)}
+                          currentUserId={user?.id ?? null}
+                          onInvite={handleInviteCareTeam}
+                          onUpdateRole={handleUpdateCareTeamRole}
+                          onRemove={handleRemoveCareTeamMember}
+                        />
+                      ) : (
+                        <div className="rounded-2xl border bg-muted/20 p-4 text-sm text-muted-foreground">
+                          Select {child.name} to view their care team.
+                        </div>
+                      )}
                     </div>
                     <div className="rounded-2xl border bg-white p-6 shadow-sm">
                       <div className="mb-4 flex items-center justify-between gap-3">
